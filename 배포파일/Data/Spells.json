@@ -1,13 +1,13 @@
-SPELLS_DB = {
-    "spells": {
-        "Flash",
-        "Ignite",
-        "Teleport",
-        "Cleanse",
-        "Ghost",
-        "Heal",
-        "Barrier",
-        "Smite",
-        "Exhaust"
-    }
+{
+  "spells": [
+    "Flash",
+    "Ignite",
+    "Teleport",
+    "Cleanse",
+    "Ghost",
+    "Heal",
+    "Barrier",
+    "Smite",
+    "Exhaust"
+  ]
 }

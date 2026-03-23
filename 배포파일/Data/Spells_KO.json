@@ -1,9 +1,11 @@
-Flash=점멸
-Ignite=점화
-Teleport=텔레포트
-Cleanse=정화
-Ghost=유체화
-Heal=회복
-Barrier=방어막
-Smite=강타
-Exhaust=탈진
+{
+  "Flash": "점멸",
+  "Ignite": "점화",
+  "Teleport": "텔레포트",
+  "Cleanse": "정화",
+  "Ghost": "유체화",
+  "Heal": "회복",
+  "Barrier": "방어막",
+  "Smite": "강타",
+  "Exhaust": "탈진"
+}

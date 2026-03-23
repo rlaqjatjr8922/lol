@@ -1,668 +1,496 @@
 from __future__ import annotations
 
-import ast
+import json
 import os
-from typing import Dict, Set
+import re
+from typing import Dict, Set, List, Tuple, Optional
 
 from gpt.chatgpt_web_bridge import ask_chatgpt
-
 
 TREE_KEYS = ["precision", "domination", "resolve", "inspiration"]
 FIRST_BUY_KEYS = {"Boots First", "Core Item First"}
 
 
-def normalize_lane_ui_to_gpt(lane_text: str) -> str:
-    mapping = {
-        "탑": "top",
-        "미드": "mid",
-        "원딜": "dragon",
-        "서폿": "support",
-        "정글": "jungle",
-    }
-    return mapping.get((lane_text or "").strip(), "top")
-
+# =========================
+# 경로 / JSON 로드
+# =========================
 
 def get_project_root() -> str:
     return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
-def get_rune_file_path() -> str:
-    return os.path.join(get_project_root(), "Data", "Rune.txt")
+def get_data_path(name: str) -> str:
+    path = os.path.join(get_project_root(), "Data", f"{name}.json")
+    if not os.path.exists(path):
+        raise FileNotFoundError(f"데이터 파일이 없습니다: {path}")
+    return path
 
 
-def get_rune_ko_file_path() -> str:
-    return os.path.join(get_project_root(), "Data", "Rune_KO.txt")
+def load_json(name: str):
+    path = get_data_path(name)
+    with open(path, "r", encoding="utf-8") as f:
+        return json.load(f)
 
 
-def get_champion_file_path() -> str:
-    return os.path.join(get_project_root(), "Data", "Champion.txt")
-
-
-def get_champion_ko_file_path() -> str:
-    return os.path.join(get_project_root(), "Data", "Champion_KO.txt")
-
-
-def get_spell_ko_file_path() -> str:
-    return os.path.join(get_project_root(), "Data", "Spells_KO.txt")
+def load_champion_db() -> Set[str]:
+    data = load_json("Champion")
+    if not isinstance(data, list):
+        raise ValueError("Champion.json은 리스트 형식이어야 합니다.")
+    return {str(x).strip() for x in data if str(x).strip()}
 
 
 def load_rune_db() -> Dict[str, Set[str]]:
-    path = get_rune_file_path()
-
-    with open(path, "r", encoding="utf-8") as f:
-        raw = f.read().strip()
-
-    if not raw:
-        raise ValueError("Data/Rune.txt 파일이 비어 있습니다.")
-
-    if raw.startswith("RUNE_DB_EN"):
-        raw = raw.split("=", 1)[1].strip()
-
-    loaded = ast.literal_eval(raw)
+    data = load_json("Rune")
+    if not isinstance(data, dict):
+        raise ValueError("Rune.json은 딕셔너리 형식이어야 합니다.")
 
     result: Dict[str, Set[str]] = {}
-    for key, value in loaded.items():
-        if isinstance(value, (set, list, tuple)):
-            result[key.lower()] = {str(x).strip() for x in value if str(x).strip()}
-        else:
-            result[key.lower()] = set()
+    for key, value in data.items():
+        if not isinstance(value, list):
+            raise ValueError(f"Rune.json의 '{key}' 값은 리스트여야 합니다.")
+        result[str(key).strip().lower()] = {
+            str(x).strip() for x in value if str(x).strip()
+        }
 
     required = ["keystone", "precision", "domination", "resolve", "inspiration"]
     for key in required:
         if key not in result:
-            raise ValueError(f"Data/Rune.txt에 '{key}' 항목이 없습니다.")
+            raise ValueError(f"Rune.json에 '{key}' 항목이 없습니다.")
 
     return result
-
-
-def load_rune_translation() -> Dict[str, str]:
-    path = get_rune_ko_file_path()
-    mapping: Dict[str, str] = {}
-
-    with open(path, "r", encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-
-            if not line:
-                continue
-            if line.startswith("#"):
-                continue
-            if "=" not in line:
-                continue
-
-            en, ko = line.split("=", 1)
-            en = en.strip()
-            ko = ko.strip()
-
-            if en and ko:
-                mapping[en] = ko
-
-    return mapping
-
-
-def load_champion_db() -> Set[str]:
-    path = get_champion_file_path()
-
-    with open(path, "r", encoding="utf-8") as f:
-        raw = f.read().strip()
-
-    if not raw:
-        raise ValueError("Data/Champion.txt 파일이 비어 있습니다.")
-
-    loaded = ast.literal_eval(raw)
-
-    if isinstance(loaded, (set, list, tuple)):
-        return {str(x).strip() for x in loaded if str(x).strip()}
-
-    raise ValueError("Data/Champion.txt 형식이 올바르지 않습니다.")
 
 
 def load_champion_translation() -> Dict[str, str]:
-    path = get_champion_ko_file_path()
-    mapping: Dict[str, str] = {}
+    data = load_json("Champion_KO")
+    if not isinstance(data, dict):
+        raise ValueError("Champion_KO.json은 딕셔너리 형식이어야 합니다.")
+    return {str(k).strip(): str(v).strip() for k, v in data.items()}
 
-    with open(path, "r", encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
 
-            if not line:
-                continue
-            if line.startswith("#"):
-                continue
-            if "=" not in line:
-                continue
-
-            en, ko = line.split("=", 1)
-            en = en.strip()
-            ko = ko.strip()
-
-            if en and ko:
-                mapping[en] = ko
-
-    return mapping
+def load_rune_translation() -> Dict[str, str]:
+    data = load_json("Rune_KO")
+    if not isinstance(data, dict):
+        raise ValueError("Rune_KO.json은 딕셔너리 형식이어야 합니다.")
+    return {str(k).strip(): str(v).strip() for k, v in data.items()}
 
 
 def load_spell_translation() -> Dict[str, str]:
-    path = get_spell_ko_file_path()
-    mapping: Dict[str, str] = {}
-
-    with open(path, "r", encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-
-            if not line:
-                continue
-            if line.startswith("#"):
-                continue
-            if "=" not in line:
-                continue
-
-            en, ko = line.split("=", 1)
-            en = en.strip()
-            ko = ko.strip()
-
-            if en and ko:
-                mapping[en] = ko
-
-    return mapping
+    data = load_json("Spells_KO")
+    if not isinstance(data, dict):
+        raise ValueError("Spells_KO.json은 딕셔너리 형식이어야 합니다.")
+    return {str(k).strip(): str(v).strip() for k, v in data.items()}
 
 
-RUNE_DB_EN = load_rune_db()
-RUNE_NAME_KO = load_rune_translation()
-RUNE_NAME_EN = {ko: en for en, ko in RUNE_NAME_KO.items()}
+# =========================
+# 문자열 정리 / 변환
+# =========================
 
-CHAMPION_DB_EN = load_champion_db()
-CHAMPION_NAME_KO = load_champion_translation()
-
-SPELL_NAME_KO = load_spell_translation()
+def normalize_text(text: str) -> str:
+    return re.sub(r"\s+", "", text).lower().strip()
 
 
-def english_tree_to_korean(tree_en: str) -> str:
+def normalize_lane_ui_to_gpt(lane_text: str) -> str:
     mapping = {
-        "precision": "정밀",
-        "domination": "지배",
-        "resolve": "결의",
-        "inspiration": "영감",
+        "탑": "top",
+        "정글": "jungle",
+        "미드": "mid",
+        "원딜": "dragon",
+        "서폿": "support",
+        "듀오": "dragon",
+        "바론": "top",
     }
-    return mapping.get((tree_en or "").strip().lower(), tree_en)
+    return mapping.get((lane_text or "").strip(), "top")
 
 
-def korean_tree_to_english(tree_ko: str) -> str:
-    mapping = {
-        "정밀": "precision",
-        "지배": "domination",
-        "결의": "resolve",
-        "영감": "inspiration",
-    }
-    return mapping.get((tree_ko or "").strip(), (tree_ko or "").strip().lower())
-
-
-def first_buy_priority_to_korean(value: str) -> str:
-    mapping = {
-        "Boots First": "신발 먼저",
-        "Core Item First": "코어템 먼저",
-    }
-    return mapping.get((value or "").strip(), value)
-
-
-def rune_to_english(name: str) -> str:
-    text = (name or "").strip()
-    if not text or text == "오류":
-        return ""
-
-    if text in RUNE_NAME_EN:
-        return RUNE_NAME_EN[text]
-
-    for category in RUNE_DB_EN.values():
-        if text in category:
-            return text
-
-    lower_map: Dict[str, str] = {}
-    for category in RUNE_DB_EN.values():
-        for rune in category:
-            lower_map[rune.lower()] = rune
-
-    return lower_map.get(text.lower(), text)
-
-
-def rune_to_korean(name: str) -> str:
-    english = rune_to_english(name)
-    if not english:
-        return "오류"
-    return RUNE_NAME_KO.get(english, english)
-
-
-def champion_to_korean(name: str) -> str:
-    text = (name or "").strip()
-    if not text or text == "오류":
-        return "오류"
-    return CHAMPION_NAME_KO.get(text, text)
-
-
-def spells_to_korean(spells_text: str) -> str:
-    text = (spells_text or "").strip()
-    if not text or text == "오류":
-        return "오류"
-
-    parts = [x.strip() for x in text.split(",") if x.strip()]
-    if not parts:
-        return "오류"
-
-    return ", ".join(SPELL_NAME_KO.get(x, x) for x in parts)
-
-
-def build_blind_pick_prompt(lane: str) -> str:
-    return "\n".join([
-        "Answer for Wild Rift only.",
-        "Do not use PC League of Legends information.",
-        "Assume latest Wild Rift meta.",
-        "Recommend one safe blind-pick champion.",
-        "Champion name must be in ENGLISH.",
-        "Reason must be in KOREAN and VERY SHORT.",
-        "",
-        f"Lane: {lane}",
-        "",
-        "Output exactly in this format:",
-        "",
-        "추천 챔피언:",
-        "One champion name",
-        "",
-        "추천 이유:",
-        "한글로 1~2문장만 매우 짧게 작성 (불필요한 설명 금지)",
-        "",
-        "Do not output anything else."
-    ])
-
-
-def build_counter_pick_prompt(enemy_champ: str, lane: str) -> str:
-    return "\n".join([
-        "Answer for Wild Rift only.",
-        "Do not use PC League of Legends information.",
-        "Assume latest Wild Rift meta.",
-        "Recommend one counter-pick champion.",
-        "Champion name must be in ENGLISH.",
-        "Reason must be in KOREAN and VERY SHORT.",
-        "",
-        f"Enemy champion: {enemy_champ}",
-        f"Lane: {lane}",
-        "",
-        "Output exactly in this format:",
-        "",
-        "추천 챔피언:",
-        "One champion name",
-        "",
-        "추천 이유:",
-        "한글로 1~2문장만 매우 짧게 작성 (불필요한 설명 금지)",
-        "",
-        "Do not output anything else."
-    ])
-
-
-def build_fixed_pick_prompt(my_champ: str, enemy_champ: str, lane: str) -> str:
-    return "\n".join([
-        "Answer for Wild Rift only.",
-        "Do not use PC League of Legends information.",
-        "Assume latest Wild Rift meta.",
-        "STRICT FORMAT. DO NOT CHANGE KEY NAMES.",
-        "Use EXACT keys below.",
-        "All fields must be filled.",
-        "Use only real Wild Rift runes.",
-        "Choose 1 Keystone, 1 Tree, 3 runes from the same Tree, and 1 Secondary rune from a different Tree.",
-        "Do not put a Keystone rune into Rune1, Rune2, or Rune3.",
-        "Secondary must be from a different Tree.",
-        "Do not use PC-only items or systems.",
-        "",
-        "Keystone, Tree, Rune1, Rune2, Rune3, Secondary, Spells, First Buy Priority, Starting Item, First Item must be in ENGLISH.",
-        "초반 운영 must be in KOREAN.",
-        "",
-        f"My champion: {my_champ}",
-        f"Enemy champion: {enemy_champ}",
-        f"Lane: {lane}",
-        "",
-        "Rules:",
-        "1. Decide Boots First or Core Item First.",
-        "2. Starting Item must be ONE 500 gold component.",
-        "3. First Item must be the FIRST completed item (boots OR core).",
-        "4. Starting Item should be an appropriate early component for the chosen path.",
-        "5. If multiple candidates exist, choose ONE best.",
-        "6. Never use Doran's items.",
-        "7. Never output a full item as Starting Item.",
-        "",
-        "Output EXACTLY:",
-        "",
-        "Keystone:",
-        "Tree:",
-        "Rune1:",
-        "Rune2:",
-        "Rune3:",
-        "Secondary:",
-        "Spells:",
-        "First Buy Priority:",
-        "Starting Item:",
-        "First Item:",
-        "초반 운영:",
-        "",
-        "For First Buy Priority, answer only:",
-        "Boots First",
-        "Core Item First",
-        "",
-        "Do not output anything else."
-    ])
-
-
-def parse_counter_pick(text: str) -> dict:
-    parsed = {"추천 챔피언": "오류", "추천 이유": "오류"}
-
-    lines = [line.strip() for line in (text or "").splitlines()]
-    reason_mode = False
-    reason_lines = []
-
-    i = 0
-    while i < len(lines):
-        line = lines[i]
-
-        if line.startswith("추천 챔피언"):
-            if ":" in line:
-                after = line.split(":", 1)[1].strip()
-
-                if after:
-                    parsed["추천 챔피언"] = after
-                else:
-                    j = i + 1
-                    while j < len(lines) and not lines[j]:
-                        j += 1
-                    if j < len(lines):
-                        parsed["추천 챔피언"] = lines[j]
-
-            reason_mode = False
-
-        elif line.startswith("추천 이유"):
-            reason_mode = True
-
-            if ":" in line:
-                after = line.split(":", 1)[1].strip()
-                if after:
-                    reason_lines.append(after)
-
-        elif reason_mode and line:
-            reason_lines.append(line)
-
-        i += 1
-
-    if reason_lines:
-        parsed["추천 이유"] = "\n".join(reason_lines).strip()
-
-    champion_en = parsed["추천 챔피언"].strip()
-    if champion_en in CHAMPION_DB_EN:
-        parsed["추천 챔피언(영문)"] = champion_en
-        parsed["추천 챔피언"] = champion_to_korean(champion_en)
-    else:
-        parsed["추천 챔피언(영문)"] = champion_en if champion_en != "오류" else "오류"
-
-    return parsed
-
-
-def parse_build(text: str) -> dict:
-    result = {
-        "Keystone": "오류",
-        "Tree": "오류",
-        "Rune1": "오류",
-        "Rune2": "오류",
-        "Rune3": "오류",
-        "Secondary": "오류",
-        "SecondaryTree": "오류",
-        "Spells": "오류",
-        "First Buy Priority": "오류",
-        "Starting Item": "오류",
-        "First Item": "오류",
-        "초반 운영": "오류",
-    }
-
-    lines = [line.strip() for line in (text or "").splitlines()]
-
-    def get_next_value(i: int) -> str:
-        j = i + 1
-        while j < len(lines) and not lines[j]:
-            j += 1
-        return lines[j] if j < len(lines) else ""
-
-    for i, line in enumerate(lines):
-        if line.startswith("Keystone:"):
-            val = line.replace("Keystone:", "", 1).strip()
-            result["Keystone"] = val if val else get_next_value(i)
-
-        elif line.startswith("Tree:"):
-            val = line.replace("Tree:", "", 1).strip()
-            result["Tree"] = val if val else get_next_value(i)
-
-        elif line.startswith("Rune1:"):
-            val = line.replace("Rune1:", "", 1).strip()
-            result["Rune1"] = val if val else get_next_value(i)
-
-        elif line.startswith("Rune2:"):
-            val = line.replace("Rune2:", "", 1).strip()
-            result["Rune2"] = val if val else get_next_value(i)
-
-        elif line.startswith("Rune3:"):
-            val = line.replace("Rune3:", "", 1).strip()
-            result["Rune3"] = val if val else get_next_value(i)
-
-        elif line.startswith("Secondary:"):
-            val = line.replace("Secondary:", "", 1).strip()
-            result["Secondary"] = val if val else get_next_value(i)
-
-        elif line.startswith("Spells:"):
-            val = line.replace("Spells:", "", 1).strip()
-            result["Spells"] = val if val else get_next_value(i)
-
-        elif line.startswith("First Buy Priority:"):
-            val = line.replace("First Buy Priority:", "", 1).strip()
-            result["First Buy Priority"] = val if val else get_next_value(i)
-
-        elif line.startswith("Starting Item:"):
-            val = line.replace("Starting Item:", "", 1).strip()
-            result["Starting Item"] = val if val else get_next_value(i)
-
-        elif line.startswith("First Item:"):
-            val = line.replace("First Item:", "", 1).strip()
-            result["First Item"] = val if val else get_next_value(i)
-
-        elif line.startswith("초반 운영:"):
-            val = line.replace("초반 운영:", "", 1).strip()
-            result["초반 운영"] = val if val else get_next_value(i)
-
+def reverse_translation_map(mapping: Dict[str, str]) -> Dict[str, str]:
+    result: Dict[str, str] = {}
+    for en, ko in mapping.items():
+        result[normalize_text(ko)] = en
+        result[normalize_text(en)] = en
     return result
 
 
-def normalize_tree_name(tree_name: str) -> str:
-    text = (tree_name or "").strip()
-    if not text or text == "오류":
+# =========================
+# 챔피언 / 룬 / 스펠 변환
+# =========================
+
+def convert_ko_champion_to_en(name: str, champion_ko: Dict[str, str], champion_db: Set[str]) -> str:
+    if not name:
         return ""
 
-    text_en = korean_tree_to_english(text)
-    if text_en in TREE_KEYS:
-        return text_en
+    raw = name.strip()
+    if raw in champion_db:
+        return raw
 
-    lower_map = {key.lower(): key for key in TREE_KEYS}
-    return lower_map.get(text.lower(), "")
+    name_norm = normalize_text(raw)
 
+    # KO -> EN
+    rev = reverse_translation_map(champion_ko)
+    if name_norm in rev:
+        return rev[name_norm]
 
-def is_valid_keystone(name: str) -> bool:
-    rune = rune_to_english(name)
-    return bool(rune) and rune in RUNE_DB_EN.get("keystone", set())
+    # EN 대소문자 무시 비교
+    for champ in champion_db:
+        if normalize_text(champ) == name_norm:
+            return champ
 
-
-def is_valid_rune_in_tree(rune_name: str, tree_name: str) -> bool:
-    tree = normalize_tree_name(tree_name)
-    rune = rune_to_english(rune_name)
-
-    if not tree or not rune:
-        return False
-
-    if tree not in RUNE_DB_EN:
-        return False
-
-    return rune in RUNE_DB_EN[tree]
+    return raw
 
 
-def find_rune_tree(rune_name: str) -> str:
-    rune = rune_to_english(rune_name)
-
-    if not rune:
+def convert_ko_rune_to_en(name: str, rune_ko: Dict[str, str], rune_db: Dict[str, Set[str]]) -> str:
+    if not name:
         return ""
 
-    for tree in TREE_KEYS:
-        if rune in RUNE_DB_EN.get(tree, set()):
-            return tree
+    raw = name.strip()
+    all_runes = set().union(*rune_db.values())
 
+    if raw in all_runes:
+        return raw
+
+    name_norm = normalize_text(raw)
+    rev = reverse_translation_map(rune_ko)
+
+    if name_norm in rev:
+        return rev[name_norm]
+
+    for rune in all_runes:
+        if normalize_text(rune) == name_norm:
+            return rune
+
+    return raw
+
+
+def convert_ko_spell_to_en(name: str, spell_ko: Dict[str, str]) -> str:
+    if not name:
+        return ""
+
+    raw = name.strip()
+    if raw in spell_ko:
+        return raw
+
+    name_norm = normalize_text(raw)
+    rev = reverse_translation_map(spell_ko)
+
+    if name_norm in rev:
+        return rev[name_norm]
+
+    for spell_en in spell_ko.keys():
+        if normalize_text(spell_en) == name_norm:
+            return spell_en
+
+    return raw
+
+
+def translate_en_to_ko(name: str, mapping: Dict[str, str]) -> str:
+    return mapping.get(name, name)
+
+
+# =========================
+# 응답 파싱
+# =========================
+
+def extract_value(text: str, label: str) -> str:
+    pattern = rf"^{re.escape(label)}\s*:\s*(.+)$"
+    for line in text.splitlines():
+        line = line.strip()
+        m = re.match(pattern, line, flags=re.IGNORECASE)
+        if m:
+            return m.group(1).strip()
     return ""
 
 
-def validate_each_field(build: dict) -> dict:
-    result = dict(build)
+def parse_spells(value: str) -> List[str]:
+    if not value:
+        return []
 
-    tree = normalize_tree_name(build.get("Tree", ""))
-    secondary_tree = find_rune_tree(build.get("Secondary", ""))
+    parts = re.split(r"[,/]| and ", value)
+    result = []
+    for part in parts:
+        p = part.strip()
+        if p:
+            result.append(p)
+    return result
 
-    if not is_valid_keystone(build.get("Keystone", "")):
-        result["Keystone"] = "오류"
 
-    if not tree:
-        result["Tree"] = "오류"
+def find_rune_tree_for_rune(rune_name: str, rune_db: Dict[str, Set[str]]) -> Optional[str]:
+    for tree in TREE_KEYS:
+        if rune_name in rune_db.get(tree, set()):
+            return tree
+    return None
 
-    if not is_valid_rune_in_tree(build.get("Rune1", ""), tree):
-        result["Rune1"] = "오류"
 
-    if not is_valid_rune_in_tree(build.get("Rune2", ""), tree):
-        result["Rune2"] = "오류"
+def validate_result(
+    parsed: Dict[str, str],
+    champion_db: Set[str],
+    rune_db: Dict[str, Set[str]],
+    champion_ko: Dict[str, str],
+    rune_ko: Dict[str, str],
+    spell_ko: Dict[str, str],
+) -> Dict[str, object]:
+    errors: List[str] = []
 
-    if not is_valid_rune_in_tree(build.get("Rune3", ""), tree):
-        result["Rune3"] = "오류"
+    enemy_champion = convert_ko_champion_to_en(parsed.get("Enemy", ""), champion_ko, champion_db)
+    my_champion = convert_ko_champion_to_en(parsed.get("Me", ""), champion_ko, champion_db)
 
-    if not secondary_tree or (tree and secondary_tree == tree):
-        result["Secondary"] = "오류"
+    if enemy_champion not in champion_db:
+        errors.append(f"상대 챔피언 인식 실패: {parsed.get('Enemy', '')}")
+    if my_champion not in champion_db:
+        errors.append(f"내 챔피언 인식 실패: {parsed.get('Me', '')}")
 
-    if result.get("Secondary") != "오류":
-        result["SecondaryTree"] = english_tree_to_korean(secondary_tree)
+    keystone = convert_ko_rune_to_en(parsed.get("Keystone", ""), rune_ko, rune_db)
+    if keystone not in rune_db["keystone"]:
+        errors.append(f"Keystone 인식 실패: {parsed.get('Keystone', '')}")
+
+    tree = extract_value_block(parsed.get("Tree", "")).lower()
+    if tree not in TREE_KEYS:
+        errors.append(f"Tree 값 오류: {parsed.get('Tree', '')}")
+
+    rune1 = convert_ko_rune_to_en(parsed.get("Rune1", ""), rune_ko, rune_db)
+    rune2 = convert_ko_rune_to_en(parsed.get("Rune2", ""), rune_ko, rune_db)
+    rune3 = convert_ko_rune_to_en(parsed.get("Rune3", ""), rune_ko, rune_db)
+
+    if tree in rune_db:
+        if rune1 not in rune_db[tree]:
+            errors.append(f"Rune1 인식 실패 또는 트리 불일치: {parsed.get('Rune1', '')}")
+        if rune2 not in rune_db[tree]:
+            errors.append(f"Rune2 인식 실패 또는 트리 불일치: {parsed.get('Rune2', '')}")
+        if rune3 not in rune_db[tree]:
+            errors.append(f"Rune3 인식 실패 또는 트리 불일치: {parsed.get('Rune3', '')}")
+
+    secondary_raw = parsed.get("Secondary", "").strip()
+    secondary_tree = ""
+    secondary_rune = ""
+
+    if ":" in secondary_raw:
+        secondary_tree, secondary_rune = [x.strip() for x in secondary_raw.split(":", 1)]
     else:
-        result["SecondaryTree"] = "오류"
+        secondary_tree = secondary_raw.strip()
 
-    if not build.get("Spells", "").strip():
-        result["Spells"] = "오류"
+    secondary_tree = secondary_tree.lower()
+    secondary_rune = convert_ko_rune_to_en(secondary_rune, rune_ko, rune_db)
 
-    if build.get("First Buy Priority", "").strip() not in FIRST_BUY_KEYS:
-        result["First Buy Priority"] = "오류"
+    if secondary_tree not in TREE_KEYS:
+        errors.append(f"Secondary 트리 오류: {parsed.get('Secondary', '')}")
+    else:
+        if secondary_rune and secondary_rune not in rune_db[secondary_tree]:
+            errors.append(f"Secondary 룬 오류: {parsed.get('Secondary', '')}")
 
-    if not build.get("Starting Item", "").strip():
-        result["Starting Item"] = "오류"
+    spells_raw = parse_spells(parsed.get("Spells", ""))
+    spells_en = [convert_ko_spell_to_en(s, spell_ko) for s in spells_raw]
+    if len(spells_en) != 2:
+        errors.append(f"Spells 개수 오류: {parsed.get('Spells', '')}")
 
-    if not build.get("First Item", "").strip():
-        result["First Item"] = "오류"
+    first_buy = parsed.get("First Buy Priority", "").strip()
+    if first_buy not in FIRST_BUY_KEYS:
+        errors.append(f"First Buy Priority 오류: {first_buy}")
 
-    if not build.get("초반 운영", "").strip():
-        result["초반 운영"] = "오류"
+    return {
+        "ok": len(errors) == 0,
+        "errors": errors,
+        "enemy_champion": enemy_champion,
+        "my_champion": my_champion,
+        "keystone": keystone,
+        "tree": tree,
+        "rune1": rune1,
+        "rune2": rune2,
+        "rune3": rune3,
+        "secondary_tree": secondary_tree,
+        "secondary_rune": secondary_rune,
+        "spells": spells_en,
+        "first_buy": first_buy,
+        "starting_item": parsed.get("Starting Item", "").strip(),
+        "first_item": parsed.get("First Item", "").strip(),
+        "early_guide": parsed.get("초반 운영", "").strip(),
+    }
+
+
+def extract_value_block(value: str) -> str:
+    return value.strip()
+
+
+def parse_response_text(text: str) -> Dict[str, str]:
+    labels = [
+        "Enemy",
+        "Me",
+        "Keystone",
+        "Tree",
+        "Rune1",
+        "Rune2",
+        "Rune3",
+        "Secondary",
+        "Spells",
+        "First Buy Priority",
+        "Starting Item",
+        "First Item",
+        "초반 운영",
+    ]
+
+    result: Dict[str, str] = {}
+    for label in labels:
+        result[label] = extract_value(text, label)
 
     return result
 
 
-def translate_build_to_korean(build: dict) -> dict:
-    translated = dict(build)
+# =========================
+# 프롬프트 생성
+# =========================
 
-    translated["Keystone"] = rune_to_korean(translated.get("Keystone", "오류"))
-    translated["Tree"] = english_tree_to_korean(translated.get("Tree", "오류"))
+def build_prompt(
+    my_champion_en: str,
+    enemy_champion_en: str,
+    lane_en: str,
+    champion_ko: Dict[str, str],
+    rune_ko: Dict[str, str],
+    spell_ko: Dict[str, str],
+) -> str:
+    my_champion_ko = translate_en_to_ko(my_champion_en, champion_ko)
+    enemy_champion_ko = translate_en_to_ko(enemy_champion_en, champion_ko)
 
-    translated["Rune1"] = rune_to_korean(translated.get("Rune1", "오류"))
-    translated["Rune2"] = rune_to_korean(translated.get("Rune2", "오류"))
-    translated["Rune3"] = rune_to_korean(translated.get("Rune3", "오류"))
+    prompt = f"""
+You are a Wild Rift pregame coach.
 
-    secondary = translated.get("Secondary", "오류")
-    translated["SecondaryTree"] = translated.get("SecondaryTree", "오류")
-    translated["Secondary"] = rune_to_korean(secondary)
+My champion: {my_champion_en} ({my_champion_ko})
+Enemy champion: {enemy_champion_en} ({enemy_champion_ko})
+Lane: {lane_en}
 
-    translated["Spells"] = spells_to_korean(translated.get("Spells", "오류"))
-    translated["First Buy Priority"] = first_buy_priority_to_korean(
-        translated.get("First Buy Priority", "오류")
+Return answer in EXACT format below.
+Use official English rune/spell names if possible.
+You may add Korean next to them if needed, but keep the English main token recognizable.
+
+Enemy: {enemy_champion_en}
+Me: {my_champion_en}
+Keystone: ...
+Tree: precision / domination / resolve / inspiration
+Rune1: ...
+Rune2: ...
+Rune3: ...
+Secondary: tree_name:rune_name
+Spells: spell1, spell2
+First Buy Priority: Boots First OR Core Item First
+Starting Item: ...
+First Item: ...
+초반 운영: ...
+
+Rules:
+- Tree must be one of: precision, domination, resolve, inspiration
+- Keystone must be one valid keystone rune
+- Rune1/2/3 must belong to the selected Tree
+- Secondary format must be exactly tree:rune
+- Spells must contain exactly 2 spells
+- First Buy Priority must be either Boots First or Core Item First
+- Keep 초반 운영 short and practical
+""".strip()
+
+    return prompt
+
+
+# =========================
+# 메인 추천 함수
+# =========================
+
+def get_pregame_coaching(my_champion: str, enemy_champion: str, lane_text: str) -> Dict[str, object]:
+    champion_db = load_champion_db()
+    rune_db = load_rune_db()
+    champion_ko = load_champion_translation()
+    rune_ko = load_rune_translation()
+    spell_ko = load_spell_translation()
+
+    my_champion_en = convert_ko_champion_to_en(my_champion, champion_ko, champion_db)
+    enemy_champion_en = convert_ko_champion_to_en(enemy_champion, champion_ko, champion_db)
+    lane_en = normalize_lane_ui_to_gpt(lane_text)
+
+    prompt = build_prompt(
+        my_champion_en=my_champion_en,
+        enemy_champion_en=enemy_champion_en,
+        lane_en=lane_en,
+        champion_ko=champion_ko,
+        rune_ko=rune_ko,
+        spell_ko=spell_ko,
     )
 
-    return translated
-
-
-def ask_build_until_valid(my_champ: str, enemy_champ: str, lane: str, max_retry: int = 4) -> dict:
-    base_prompt = build_fixed_pick_prompt(my_champ, enemy_champ, lane)
-    best_validated = None
-    best_score = -1
-
-    keys = [
-        "Keystone", "Tree", "Rune1", "Rune2", "Rune3",
-        "Secondary", "Spells", "First Buy Priority",
-        "Starting Item", "First Item", "초반 운영"
-    ]
-
-    for _ in range(max_retry):
-        answer = ask_chatgpt(base_prompt)
-
-        if not answer or not answer.strip():
-            continue
-
-        build = parse_build(answer)
-        validated = validate_each_field(build)
-
-        score = sum(1 for key in keys if validated.get(key) != "오류")
-
-        if score > best_score:
-            best_score = score
-            best_validated = validated
-
-        if score == len(keys):
-            return translate_build_to_korean(validated)
-
-    if best_validated is not None:
-        return translate_build_to_korean(best_validated)
+    raw_answer = ask_chatgpt(prompt)
+    parsed = parse_response_text(raw_answer)
+    validated = validate_result(parsed, champion_db, rune_db, champion_ko, rune_ko, spell_ko)
 
     return {
-        "Keystone": "오류",
-        "Tree": "오류",
-        "Rune1": "오류",
-        "Rune2": "오류",
-        "Rune3": "오류",
-        "Secondary": "오류",
-        "SecondaryTree": "오류",
-        "Spells": "오류",
-        "First Buy Priority": "오류",
-        "Starting Item": "오류",
-        "First Item": "오류",
-        "초반 운영": "오류",
+        "ok": validated["ok"],
+        "errors": validated["errors"],
+        "raw_answer": raw_answer,
+        "parsed": validated,
     }
 
 
-def recommend_blind_pick(lane_ui: str) -> dict:
-    lane = normalize_lane_ui_to_gpt(lane_ui)
-    prompt = build_blind_pick_prompt(lane)
-    answer = ask_chatgpt(prompt)
-    parsed = parse_counter_pick(answer or "")
+# =========================
+# 출력용 포맷
+# =========================
 
-    if not parsed["추천 챔피언"]:
-        parsed["추천 챔피언"] = "오류"
-    if not parsed["추천 이유"]:
-        parsed["추천 이유"] = "오류"
+def format_result_for_ui(result: Dict[str, object],
+                         champion_ko: Dict[str, str],
+                         rune_ko: Dict[str, str],
+                         spell_ko: Dict[str, str]) -> str:
+    parsed = result["parsed"]
 
-    return parsed
+    enemy_en = parsed["enemy_champion"]
+    me_en = parsed["my_champion"]
+
+    enemy_ko = translate_en_to_ko(enemy_en, champion_ko)
+    me_ko = translate_en_to_ko(me_en, champion_ko)
+
+    keystone_en = parsed["keystone"]
+    rune1_en = parsed["rune1"]
+    rune2_en = parsed["rune2"]
+    rune3_en = parsed["rune3"]
+    secondary_tree = parsed["secondary_tree"]
+    secondary_rune_en = parsed["secondary_rune"]
+    spells_en = parsed["spells"]
+
+    lines = [
+        f"상대 챔피언: {enemy_ko} ({enemy_en})",
+        f"내 챔피언: {me_ko} ({me_en})",
+        f"핵심 룬: {translate_en_to_ko(keystone_en, rune_ko)} ({keystone_en})",
+        f"룬 트리: {parsed['tree']}",
+        f"룬1: {translate_en_to_ko(rune1_en, rune_ko)} ({rune1_en})",
+        f"룬2: {translate_en_to_ko(rune2_en, rune_ko)} ({rune2_en})",
+        f"룬3: {translate_en_to_ko(rune3_en, rune_ko)} ({rune3_en})",
+        f"보조 룬: {secondary_tree}:{translate_en_to_ko(secondary_rune_en, rune_ko)} ({secondary_rune_en})",
+        f"스펠: {', '.join([f'{translate_en_to_ko(s, spell_ko)} ({s})' for s in spells_en])}",
+        f"첫 구매 우선순위: {parsed['first_buy']}",
+        f"시작 아이템: {parsed['starting_item']}",
+        f"첫 코어 아이템: {parsed['first_item']}",
+        f"초반 운영: {parsed['early_guide']}",
+    ]
+
+    if not result["ok"]:
+        lines.append("")
+        lines.append("[오류]")
+        for err in result["errors"]:
+            lines.append(f"- {err}")
+
+    return "\n".join(lines)
 
 
-def recommend_counter(enemy_champ: str, lane_ui: str) -> dict:
-    lane = normalize_lane_ui_to_gpt(lane_ui)
-    prompt = build_counter_pick_prompt(enemy_champ, lane)
-    answer = ask_chatgpt(prompt)
-    parsed = parse_counter_pick(answer or "")
+# =========================
+# 테스트 실행
+# =========================
 
-    if not parsed["추천 챔피언"]:
-        parsed["추천 챔피언"] = "오류"
-    if not parsed["추천 이유"]:
-        parsed["추천 이유"] = "오류"
+if __name__ == "__main__":
+    try:
+        champion_ko = load_champion_translation()
+        rune_ko = load_rune_translation()
+        spell_ko = load_spell_translation()
 
-    return parsed
+        # 테스트용
+        my_champion = "가렌"
+        enemy_champion = "다리우스"
+        lane = "탑"
 
+        result = get_pregame_coaching(my_champion, enemy_champion, lane)
+        text = format_result_for_ui(result, champion_ko, rune_ko, spell_ko)
 
-def recommend_build(my_champ: str, enemy_champ: str, lane_ui: str) -> dict:
-    lane = normalize_lane_ui_to_gpt(lane_ui)
-    return ask_build_until_valid(my_champ, enemy_champ, lane)
+        print("=" * 50)
+        print(text)
+        print("=" * 50)
+
+    except Exception as e:
+        print(f"[오류] {e}")
