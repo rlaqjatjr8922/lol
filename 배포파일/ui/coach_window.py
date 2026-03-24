@@ -363,6 +363,15 @@ class CoachWindow:
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
 
     def _on_next(self):
+        # 🔥 3단계에서 다음 누르면 인게임 코치 실행
+        if self.current_step == 3:
+            from core.ingame_coach import run_ingame
+
+            print("👉 인게임 실행")
+            self.root.destroy()
+            run_ingame()
+            return
+
         self._next_clicked = True
 
     def _on_back(self):
@@ -399,6 +408,7 @@ class CoachWindow:
         self.step1_frame.pack(fill="both", expand=True)
 
         self.back_button.grid_remove()
+        self.next_button.config(text="다음")
         self.next_button.grid(row=0, column=1, sticky="ew", padx=4)
 
         self.set_status("픽 순서와 라인 선택")
@@ -411,6 +421,7 @@ class CoachWindow:
         self.step2_frame.pack(fill="both", expand=True)
 
         self.back_button.grid(row=0, column=0, sticky="ew", padx=4)
+        self.next_button.config(text="다음")
         self.next_button.grid(row=0, column=1, sticky="ew", padx=4)
 
         self.set_status("챔피언 정보 입력")
@@ -422,8 +433,10 @@ class CoachWindow:
         self.step3_frame.pack(fill="both", expand=True)
 
         self.back_button.grid(row=0, column=0, sticky="ew", padx=4)
+        self.next_button.config(text="게임 시작")
         self.next_button.grid(row=0, column=1, sticky="ew", padx=4)
 
+        self.set_status("프리게임 완료")
         self.root.update()
 
     def set_recommendation(self, champ: str, reason: str):
