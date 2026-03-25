@@ -1,12 +1,9 @@
-from core.pregame_app import run_pregame_then_ingame as run_pregame
-from core.ingame_coach import run_ingame
+from ui.controller.coach_controller import run_full_app
 
 
 def main():
-    print("=== Wildrift AI Coach 시작 ===")
-    run_pregame()
-    print("프리게임 코치 완료 → 인게임 코치 시작")
-    run_ingame()
+    print("=== Wild Rift AI Coach 시작 ===")
+    run_full_app()
 
 
 if __name__ == "__main__":

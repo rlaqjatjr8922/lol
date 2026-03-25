@@ -1,130 +1,181 @@
-import subprocess
-import time
-
-import requests
 from playwright.sync_api import sync_playwright
 
-PORT = 9222
-CHROME_PATH = r"C:\Program Files\Google\Chrome\Application\chrome.exe"
-USER_DATA_DIR = r"C:\chrome-debug"
-
-
-def is_debug_browser_running():
-    try:
-        r = requests.get(f"http://127.0.0.1:{PORT}/json/version", timeout=2)
-        return r.status_code == 200
-    except Exception:
-        return False
-
-
-def start_debug_chrome():
-    subprocess.Popen([
-        CHROME_PATH,
-        f"--remote-debugging-port={PORT}",
-        f"--user-data-dir={USER_DATA_DIR}",
-        "https://chatgpt.com"
-    ])
-    for _ in range(20):
-        if is_debug_browser_running():
-            return True
-        time.sleep(1)
-    return False
-
-
-def get_chatgpt_page(context):
-    for pg in context.pages:
-        if "chatgpt.com" in pg.url or "chat.openai.com" in pg.url:
-            return pg
-    page = context.new_page()
-    page.goto("https://chatgpt.com", wait_until="domcontentloaded")
-    return page
-
-
-def get_input_box(page):
-    selectors = ["div[contenteditable='true']", "textarea"]
-    end = time.time() + 20
-    while time.time() < end:
-        for sel in selectors:
-            loc = page.locator(sel)
-            try:
-                count = loc.count()
-            except Exception:
-                count = 0
-            for i in range(count):
-                el = loc.nth(i)
-                try:
-                    if el.is_visible():
-                        return el
-                except Exception:
-                    pass
-        page.wait_for_timeout(300)
-    raise RuntimeError("입력창 못찾음")
-
-
-def wait_until_answer_done(page):
-    saw_generation = False
-    while True:
-        stop_btn = page.locator("button[data-testid='stop-button']")
-        try:
-            visible = stop_btn.count() > 0 and stop_btn.first.is_visible()
-        except Exception:
-            visible = False
-        if visible:
-            saw_generation = True
-        else:
-            if saw_generation:
-                return
-        page.wait_for_timeout(700)
-
-
-def get_last_answer(page):
-    selectors = [
-        "[data-message-author-role='assistant']",
-        "[data-testid^='conversation-turn-']",
-        "article"
-    ]
-    for sel in selectors:
-        loc = page.locator(sel)
-        try:
-            count = loc.count()
-        except Exception:
-            count = 0
-        if count <= 0:
-            continue
-        for i in range(count - 1, -1, -1):
-            try:
-                txt = loc.nth(i).inner_text().strip()
-                if txt:
-                    return txt
-            except Exception:
-                pass
-    return ""
+from gpt.browser import is_debug_browser_running, start_debug_chrome, PORT
+from gpt.chat_page import (
+    get_chatgpt_page,
+    get_input_box,
+    wait_until_answer_done,
+    get_last_answer,
+)
 
 
 def ask_chatgpt(prompt: str) -> str:
+    prompt = (prompt or "").strip()
+    if not prompt:
+        return ""
+
     if not is_debug_browser_running():
         if not start_debug_chrome():
-            return ""
+            return "오류: 디버그 크롬 실행 실패"
+
     with sync_playwright() as p:
         browser = p.chromium.connect_over_cdp(f"http://127.0.0.1:{PORT}")
+
         if not browser.contexts:
-            return ""
+            return "오류: 크롬 컨텍스트 없음"
+
         context = browser.contexts[0]
         page = get_chatgpt_page(context)
-        page.bring_to_front()
-        page.wait_for_timeout(1500)
-        box = get_input_box(page)
-        box.click()
+
         try:
-            page.keyboard.press("Control+A")
-            page.keyboard.press("Backspace")
+            page.bring_to_front()
         except Exception:
             pass
+
+        page.wait_for_timeout(1500)
+
+        input_box = get_input_box(page)
+
         try:
-            box.fill(prompt)
+            input_box.scroll_into_view_if_needed()
         except Exception:
-            page.keyboard.insert_text(prompt)
+            pass
+
         page.wait_for_timeout(300)
-        page.keyboard.press("Enter")
-        wait_until_answer_done(page)
-        return get_last_answer(page)
+
+        # 입력창 포커스 잡기
+        clicked = False
+        click_errors = []
+
+        for _ in range(5):
+            try:
+                input_box.click(timeout=3000)
+                clicked = True
+                break
+            except Exception as e:
+                click_errors.append(str(e))
+                page.wait_for_timeout(500)
+
+        if not clicked:
+            try:
+                page.evaluate(
+                    """
+                    (el) => {
+                        el.focus();
+                    }
+                    """,
+                    input_box,
+                )
+                clicked = True
+            except Exception as e:
+                click_errors.append(str(e))
+
+        if not clicked:
+            return "오류: 입력창 클릭 실패\n" + "\n".join(click_errors)
+
+        page.wait_for_timeout(300)
+
+        # 기존 입력 내용 삭제
+        try:
+            input_box.press("Control+A")
+            input_box.press("Backspace")
+        except Exception:
+            try:
+                page.keyboard.press("Control+A")
+                page.keyboard.press("Backspace")
+            except Exception:
+                pass
+
+        page.wait_for_timeout(200)
+
+        # 프롬프트 전체를 한 번에 입력
+        injected = False
+        inject_errors = []
+
+        # 1순위: contenteditable/textbox 직접 입력
+        try:
+            page.evaluate(
+                """
+                ({text}) => {
+                    const active = document.activeElement;
+                    if (!active) return false;
+
+                    if (
+                        active.getAttribute("contenteditable") === "true" ||
+                        active.getAttribute("role") === "textbox"
+                    ) {
+                        active.textContent = text;
+                        active.dispatchEvent(new Event("input", { bubbles: true }));
+                        return true;
+                    }
+
+                    if (active.tagName === "TEXTAREA") {
+                        active.value = text;
+                        active.dispatchEvent(new Event("input", { bubbles: true }));
+                        return true;
+                    }
+
+                    return false;
+                }
+                """,
+                {"text": prompt},
+            )
+            injected = True
+        except Exception as e:
+            inject_errors.append(str(e))
+
+        # 2순위: type으로 직접 입력
+        if not injected:
+            try:
+                input_box.type(prompt, delay=0)
+                injected = True
+            except Exception as e:
+                inject_errors.append(str(e))
+
+        if not injected:
+            return "오류: 프롬프트 입력 실패\n" + "\n".join(inject_errors)
+
+        page.wait_for_timeout(500)
+
+        # 전송 버튼이 있으면 버튼 우선, 없으면 Enter
+        sent = False
+        send_errors = []
+
+        send_selectors = [
+            "button[data-testid='send-button']",
+            "button[aria-label*='전송']",
+            "button[aria-label*='Send']",
+        ]
+
+        for sel in send_selectors:
+            try:
+                btn = page.locator(sel)
+                if btn.count() > 0 and btn.first.is_visible():
+                    btn.first.click(timeout=3000)
+                    sent = True
+                    break
+            except Exception as e:
+                send_errors.append(f"{sel}: {e}")
+
+        if not sent:
+            try:
+                input_box.press("Enter")
+                sent = True
+            except Exception as e:
+                send_errors.append(str(e))
+
+        if not sent:
+            return "오류: 전송 실패\n" + "\n".join(send_errors)
+
+        try:
+            wait_until_answer_done(page)
+            answer = get_last_answer(page).strip()
+        except Exception as e:
+            return f"오류: 응답 읽기 실패\n{e}"
+
+        try:
+            browser.close()
+        except Exception:
+            pass
+
+        return answer
