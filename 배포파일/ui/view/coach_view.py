@@ -6,6 +6,11 @@ import cv2
 import numpy as np
 from PIL import Image, ImageTk
 
+try:
+    from core.data.champion_mapper import champion_to_korean
+except Exception:
+    champion_to_korean = None
+
 
 class CoachView:
     def __init__(self):
@@ -431,6 +436,17 @@ class CoachView:
         self.show_step1()
         self.on_pick_change()
 
+    def _to_ko_safe(self, name: str) -> str:
+        text = (name or "").strip()
+        if not text:
+            return ""
+        if champion_to_korean is None:
+            return text
+        try:
+            return champion_to_korean(text)
+        except Exception:
+            return text
+
     def _on_preview_inner_configure(self, event=None):
         self.preview_canvas.configure(scrollregion=self.preview_canvas.bbox("all"))
 
@@ -580,31 +596,22 @@ class CoachView:
     def set_detected_previews(self, result: dict):
         debug_paths = result.get("debug_paths", {}) or {}
 
-        self._set_preview_group(
-            "ally_bans",
-            debug_paths.get("ally_bans", []),
-            result.get("ally_bans_ko") or result.get("ally_bans", []),
-        )
-        self._set_preview_group(
-            "enemy_bans",
-            debug_paths.get("enemy_bans", []),
-            result.get("enemy_bans_ko") or result.get("enemy_bans", []),
-        )
-        self._set_preview_group(
-            "ally_picks",
-            debug_paths.get("ally_picks", []),
-            result.get("ally_picks_ko") or result.get("ally_picks", []),
-        )
-        self._set_preview_group(
-            "enemy_picks",
-            debug_paths.get("enemy_picks", []),
-            result.get("enemy_picks_ko") or result.get("enemy_picks", []),
-        )
-        self._set_preview_group(
-            "ally_roles",
-            debug_paths.get("ally_roles", []),
-            result.get("ally_roles", []),
-        )
+        ally_bans = result.get("ally_bans_ko") or result.get("ally_bans", []) or []
+        enemy_bans = result.get("enemy_bans_ko") or result.get("enemy_bans", []) or []
+        ally_picks = result.get("ally_picks_ko") or result.get("ally_picks", []) or []
+        enemy_picks = result.get("enemy_picks_ko") or result.get("enemy_picks", []) or []
+        ally_roles = result.get("ally_roles", []) or []
+
+        ally_bans = [self._to_ko_safe(x) for x in ally_bans]
+        enemy_bans = [self._to_ko_safe(x) for x in enemy_bans]
+        ally_picks = [self._to_ko_safe(x) for x in ally_picks]
+        enemy_picks = [self._to_ko_safe(x) for x in enemy_picks]
+
+        self._set_preview_group("ally_bans", debug_paths.get("ally_bans", []), ally_bans)
+        self._set_preview_group("enemy_bans", debug_paths.get("enemy_bans", []), enemy_bans)
+        self._set_preview_group("ally_picks", debug_paths.get("ally_picks", []), ally_picks)
+        self._set_preview_group("enemy_picks", debug_paths.get("enemy_picks", []), enemy_picks)
+        self._set_preview_group("ally_roles", debug_paths.get("ally_roles", []), ally_roles)
 
         self.root.update_idletasks()
 
@@ -661,11 +668,16 @@ class CoachView:
         image_path = result.get("image_path", "")
         image_name = os.path.basename(image_path) if image_path else "-"
 
-        my_champ = result.get("my_champ_ko") or result.get("my_champ") or "-"
-        enemy_champ = result.get("enemy_champ_ko") or result.get("enemy_champ") or "-"
+        my_raw = result.get("my_champ_ko") or result.get("my_champ") or ""
+        enemy_raw = result.get("enemy_champ_ko") or result.get("enemy_champ") or ""
+        my_champ = self._to_ko_safe(my_raw) or "-"
+        enemy_champ = self._to_ko_safe(enemy_raw) or "-"
 
         ally_picks = result.get("ally_picks_ko") or result.get("ally_picks", []) or []
         enemy_picks = result.get("enemy_picks_ko") or result.get("enemy_picks", []) or []
+
+        ally_picks = [self._to_ko_safe(x) for x in ally_picks]
+        enemy_picks = [self._to_ko_safe(x) for x in enemy_picks]
 
         ally_text = ", ".join([x for x in ally_picks if x]) or "-"
         enemy_text = ", ".join([x for x in enemy_picks if x]) or "-"
