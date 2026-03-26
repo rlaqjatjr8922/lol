@@ -12,8 +12,8 @@ IMAGE_EXTS = (".png", ".jpg", ".jpeg", ".webp", ".bmp")
 
 # =========================
 # 픽셀 기준 ROI
-# 기준 해상도: 2048 x 945
-# ally_picks 는 hover 위치만 사용
+# 기준 해상도: 현재 쓰는 스샷 기준
+# ally_roles 추가
 # =========================
 ROI_CONFIG = {
     "ally_bans": [
@@ -44,7 +44,17 @@ ROI_CONFIG = {
         (2105, 591, 109, 109),
         (2105, 738, 109, 109),
     ],
+    "ally_roles": [
+        (235, 231, 40, 40),
+        (235, 378, 40, 40),
+        (235, 525, 40, 40),
+        (235, 672, 40, 40),
+        (235, 819, 40, 40),
+    ],
 }
+
+# 미리보기 이미지 저장 여부
+SAVE_PREVIEW = True
 
 
 def imread_korean(path):
@@ -91,6 +101,53 @@ def crop_roi(img, roi):
     return img[y:y + h, x:x + w]
 
 
+def draw_roi_preview(img, roi_config):
+    preview = img.copy()
+
+    group_colors = {
+        "ally_bans": (0, 255, 0),
+        "enemy_bans": (0, 0, 255),
+        "ally_picks": (255, 200, 0),
+        "enemy_picks": (255, 0, 255),
+        "ally_roles": (0, 255, 255),
+    }
+
+    for group_name, roi_list in roi_config.items():
+        color = group_colors.get(group_name, (255, 255, 255))
+
+        for idx, roi in enumerate(roi_list, 1):
+            x, y, w, h = roi
+            cv2.rectangle(preview, (x, y), (x + w, y + h), color, 2)
+
+            label = f"{group_name}_{idx}"
+            text_y = max(15, y - 6)
+            cv2.putText(
+                preview,
+                label,
+                (x, text_y),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.42,
+                color,
+                1,
+                cv2.LINE_AA
+            )
+
+    return preview
+
+
+def validate_rois(img, roi_config):
+    img_h, img_w = img.shape[:2]
+    has_warning = False
+
+    for group_name, roi_list in roi_config.items():
+        for idx, (x, y, w, h) in enumerate(roi_list, 1):
+            if x < 0 or y < 0 or x + w > img_w or y + h > img_h:
+                print(f"[경고] {group_name}_{idx} ROI가 이미지 밖일 수 있음: ({x}, {y}, {w}, {h}) / 이미지크기 {img_w}x{img_h}")
+                has_warning = True
+
+    return has_warning
+
+
 def main():
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
@@ -113,6 +170,8 @@ def main():
         h, w = img.shape[:2]
         print(f"\n처리 중: {base_name} | 크기: {w}x{h}")
 
+        validate_rois(img, ROI_CONFIG)
+
         for group_name, roi_list in ROI_CONFIG.items():
             for idx, roi in enumerate(roi_list, 1):
                 cropped = crop_roi(img, roi)
@@ -127,6 +186,13 @@ def main():
 
                 print(f"  저장 완료: {save_name}")
                 saved_count += 1
+
+        if SAVE_PREVIEW:
+            preview = draw_roi_preview(img, ROI_CONFIG)
+            preview_name = f"{base_name}__roi_preview.png"
+            preview_path = os.path.join(OUTPUT_DIR, preview_name)
+            imwrite_korean(preview_path, preview)
+            print(f"  미리보기 저장 완료: {preview_name}")
 
     print("\n=== 완료 ===")
     print(f"총 저장 개수: {saved_count}")

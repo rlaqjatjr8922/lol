@@ -1,5 +1,6 @@
 from core.flow.pregame_flow import run_pregame_step2, run_pregame_step3
 from core.model.draft_input import DraftInput
+from core.vision.pregame_pick_detector import autofill_view_from_latest_image
 
 
 class PregameController:
@@ -7,6 +8,19 @@ class PregameController:
         self.view = view
         self.view.next_button.config(command=self.on_next)
         self.view.back_button.config(command=self.on_back)
+
+        # 창 뜬 직후 자료 폴더 자동 읽기
+        try:
+            self.view.root.after(300, self._auto_scan_on_start)
+        except Exception:
+            pass
+
+    def _auto_scan_on_start(self):
+        try:
+            msg = autofill_view_from_latest_image(self.view)
+            self.view.set_status(f"자료폴더 자동 읽기 완료 | {msg}")
+        except Exception as e:
+            self.view.set_status(f"자료폴더 자동 읽기 실패: {e}")
 
     def on_next(self):
         try:
@@ -29,8 +43,13 @@ class PregameController:
             self.view.set_status(f"뒤로 처리 실패: {e}")
 
     def _handle_step1_next(self):
-        inputs = self.view.get_inputs()
+        try:
+            msg = autofill_view_from_latest_image(self.view)
+            self.view.set_status(msg)
+        except Exception as e:
+            self.view.set_status(f"자동 인식 경고: {e}")
 
+        inputs = self.view.get_inputs()
         pick_order = (inputs.get("pick_order") or "").strip()
         lane = (inputs.get("lane") or "").strip()
         enemy_champ = (inputs.get("enemy_champ") or "").strip()
@@ -62,8 +81,12 @@ class PregameController:
             self.view.set_status(f"추천 실패: {e}")
 
     def _handle_step2_next(self):
-        inputs = self.view.get_inputs()
+        try:
+            autofill_view_from_latest_image(self.view)
+        except Exception:
+            pass
 
+        inputs = self.view.get_inputs()
         pick_order = (inputs.get("pick_order") or "").strip()
         enemy_champ = (inputs.get("enemy_champ") or "").strip()
         my_champ = (inputs.get("my_champ") or "").strip()
@@ -104,7 +127,6 @@ class PregameController:
         try:
             self.view.set_status("인게임 코치창 여는 중...")
             self.view.root.update()
-
             self.view.root.destroy()
 
             from ui.controller.ingame_controller import run_ingame_app
