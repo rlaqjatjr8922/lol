@@ -1,0 +1,188 @@
+import os
+import re
+import time
+import requests
+from io import BytesIO
+from PIL import Image
+from bs4 import BeautifulSoup
+from urllib.parse import urljoin
+
+BASE_URL = "https://www.wildriftfire.com/"
+SAVE_DIR = r"C:\Users\gimbe\OneDrive\Desktop\lol_project\대이터추출\결과"
+
+HEADERS = {
+    "User-Agent": "Mozilla/5.0"
+}
+
+session = requests.Session()
+session.headers.update(HEADERS)
+
+
+def get_soup(url: str):
+    resp = session.get(url, timeout=20)
+    resp.raise_for_status()
+    return BeautifulSoup(resp.text, "html.parser")
+
+
+def get_slug_from_href(href: str):
+    # /guide/aatrox -> aatrox
+    parts = href.strip("/").split("/")
+    if len(parts) >= 2 and parts[0] == "guide":
+        return parts[1].lower()
+    return ""
+
+
+def get_champion_guides():
+    soup = get_soup(BASE_URL)
+
+    guides = []
+    seen = set()
+
+    for a in soup.find_all("a", href=True):
+        href = a["href"].strip()
+
+        if not href.startswith("/guide/"):
+            continue
+
+        slug = get_slug_from_href(href)
+        if not slug or slug in seen:
+            continue
+
+        seen.add(slug)
+        guides.append({
+            "slug": slug,
+            "url": urljoin(BASE_URL, href)
+        })
+
+    return guides
+
+
+def normalize_image_url(raw_src: str, page_url: str) -> str:
+    if not raw_src:
+        return ""
+
+    src = raw_src.strip()
+
+    # //example.com/a.png -> https://example.com/a.png
+    if src.startswith("//"):
+        src = "https:" + src
+
+    # /images/... -> https://www.wildriftfire.com/images/...
+    src = urljoin(page_url, src)
+
+    # 잘못 붙은 .png.png 제거
+    src = re.sub(r"\.png\.png($|\?)", r".png\1", src, flags=re.IGNORECASE)
+    src = re.sub(r"\.jpg\.jpg($|\?)", r".jpg\1", src, flags=re.IGNORECASE)
+    src = re.sub(r"\.jpeg\.jpeg($|\?)", r".jpeg\1", src, flags=re.IGNORECASE)
+    src = re.sub(r"\.webp\.webp($|\?)", r".webp\1", src, flags=re.IGNORECASE)
+
+    return src
+
+
+def pick_best_champion_image(soup, guide_url: str, slug: str) -> str:
+    candidates = []
+
+    # 1) meta 이미지
+    for meta in soup.find_all("meta"):
+        content = meta.get("content", "").strip()
+        prop = meta.get("property", "").strip().lower()
+        name = meta.get("name", "").strip().lower()
+
+        if (prop in ("og:image", "twitter:image") or name == "twitter:image") and content:
+            candidates.append(content)
+
+    # 2) img 태그
+    for img in soup.find_all("img", src=True):
+        src = img["src"].strip()
+        alt = (img.get("alt") or "").strip().lower()
+        cls = " ".join(img.get("class", []))
+        candidates.append(src)
+
+        # alt가 챔피언명과 맞는 건 우선순위 높게 보기 위해 앞에도 넣음
+        if slug in src.lower() or slug == alt or slug.replace("-", " ") in alt:
+            candidates.insert(0, src)
+
+    # 후보 정리
+    cleaned = []
+    seen = set()
+    for c in candidates:
+        u = normalize_image_url(c, guide_url)
+        if not u or u in seen:
+            continue
+        seen.add(u)
+        cleaned.append(u)
+
+    # 우선순위: slug 포함 + champion/icon 또는 champion/square 포함
+    scored = []
+    for u in cleaned:
+        score = 0
+        lu = u.lower()
+
+        if slug in lu:
+            score += 5
+        if "/images/champion/icon/" in lu:
+            score += 4
+        if "/images/champion/square/" in lu:
+            score += 3
+        if "/champion/icon/" in lu:
+            score += 2
+        if "/champion/square/" in lu:
+            score += 2
+        if lu.endswith(".png"):
+            score += 1
+
+        scored.append((score, u))
+
+    scored.sort(reverse=True)
+    return scored[0][1] if scored else ""
+
+
+def download_as_png(url: str, save_path: str):
+    resp = session.get(url, timeout=30)
+    resp.raise_for_status()
+
+    img = Image.open(BytesIO(resp.content)).convert("RGBA")
+    img.save(save_path, "PNG")
+
+
+def main():
+    os.makedirs(SAVE_DIR, exist_ok=True)
+
+    guides = get_champion_guides()
+    print(f"챔피언 수: {len(guides)}")
+
+    ok_count = 0
+    fail_count = 0
+
+    for i, champ in enumerate(guides, 1):
+        slug = champ["slug"]
+        guide_url = champ["url"]
+
+        try:
+            soup = get_soup(guide_url)
+            img_url = pick_best_champion_image(soup, guide_url, slug)
+
+            if not img_url:
+                print(f"[실패] {slug}: 이미지 URL 못 찾음")
+                fail_count += 1
+                continue
+
+            save_path = os.path.join(SAVE_DIR, f"{slug}.png")
+            download_as_png(img_url, save_path)
+
+            print(f"[{i}/{len(guides)}] 저장 완료: {slug}.png <- {img_url}")
+            ok_count += 1
+            time.sleep(0.15)
+
+        except Exception as e:
+            print(f"[에러] {slug}: {e}")
+            fail_count += 1
+
+    print("\n=== 완료 ===")
+    print("성공:", ok_count)
+    print("실패:", fail_count)
+    print("저장 폴더:", SAVE_DIR)
+
+
+if __name__ == "__main__":
+    main()
