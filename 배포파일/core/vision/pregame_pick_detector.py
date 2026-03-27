@@ -29,7 +29,13 @@ DATA_DIR = os.path.join(PROJECT_ROOT, "Data")
 CHAMP_TEMPLATE_DIR = os.path.join(DATA_DIR, "Champion")
 
 DETECT_DEBUG = os.environ.get("LOL_DETECT_DEBUG", "1").strip().lower() in ("1", "true", "yes")
-CHAMP_MATCH_THRESHOLD = float(os.environ.get("LOL_CHAMP_MATCH_THRESHOLD", "0.25"))
+
+BAN_MATCH_THRESHOLD = float(os.environ.get("LOL_BAN_MATCH_THRESHOLD", "0.38"))
+PICK_MATCH_THRESHOLD = float(os.environ.get("LOL_PICK_MATCH_THRESHOLD", "0.54"))
+
+EMPTY_STD_THRESHOLD = float(os.environ.get("LOL_EMPTY_STD_THRESHOLD", "14.0"))
+EMPTY_EDGE_THRESHOLD = float(os.environ.get("LOL_EMPTY_EDGE_THRESHOLD", "0.022"))
+PICK_GAP_THRESHOLD = float(os.environ.get("LOL_PICK_GAP_THRESHOLD", "0.010"))
 
 USE_SCALED_ROI = False
 BASE_W = 2280
@@ -221,10 +227,6 @@ def _make_circle_mask(size=96, shrink=0.90):
 
 
 def _apply_circle_mask_to_bgr(img, size=162, shrink=0.90):
-    """
-    저장용: 픽 이미지를 원형으로 저장
-    바깥은 검정 배경
-    """
     img = cv2.resize(img, (size, size), interpolation=cv2.INTER_AREA)
 
     mask = np.zeros((size, size), dtype=np.uint8)
@@ -236,6 +238,27 @@ def _apply_circle_mask_to_bgr(img, size=162, shrink=0.90):
     out = np.zeros_like(img)
     out[mask == 255] = img[mask == 255]
     return out
+
+
+# =========================
+# 빈 슬롯 판별
+# =========================
+def _slot_basic_stats(img):
+    resized = cv2.resize(img, (96, 96), interpolation=cv2.INTER_AREA)
+    gray = cv2.cvtColor(resized, cv2.COLOR_BGR2GRAY)
+    gray = cv2.GaussianBlur(gray, (3, 3), 0)
+
+    std_val = float(np.std(gray))
+
+    edges = cv2.Canny(gray, 45, 140)
+    edge_ratio = float(np.count_nonzero(edges)) / float(edges.size)
+
+    return std_val, edge_ratio
+
+
+def _is_empty_pick_slot(img):
+    std_val, edge_ratio = _slot_basic_stats(img)
+    return std_val < EMPTY_STD_THRESHOLD and edge_ratio < EMPTY_EDGE_THRESHOLD
 
 
 # =========================
@@ -301,8 +324,6 @@ def _score_ban(a, b):
 def _prep_pick(img):
     h, w = img.shape[:2]
 
-    # ROI는 그대로 두고, 내부 전처리만 함
-    # 아래쪽 역할/장식 영향 줄이기
     img = img[:int(h * 0.82), :]
     img = cv2.resize(img, (96, 96), interpolation=cv2.INTER_AREA)
 
@@ -325,7 +346,35 @@ def _score_pick(a, b):
     s1 = float(cv2.matchTemplate(ag, bg, cv2.TM_CCOEFF_NORMED)[0][0])
     s2 = float(cv2.matchTemplate(ae, be, cv2.TM_CCOEFF_NORMED)[0][0])
 
-    return 0.70 * s1 + 0.30 * s2
+    h, w = ag.shape
+    cx1, cx2 = int(w * 0.30), int(w * 0.70)
+    cy1, cy2 = int(h * 0.30), int(h * 0.70)
+
+    center_a = ag[cy1:cy2, cx1:cx2]
+    center_b = bg[cy1:cy2, cx1:cx2]
+
+    try:
+        s3 = float(cv2.matchTemplate(center_a, center_b, cv2.TM_CCOEFF_NORMED)[0][0])
+    except Exception:
+        s3 = 0.0
+
+    hist_a = cv2.calcHist([ag], [0], None, [32], [0, 256])
+    hist_b = cv2.calcHist([bg], [0], None, [32], [0, 256])
+
+    cv2.normalize(hist_a, hist_a)
+    cv2.normalize(hist_b, hist_b)
+
+    try:
+        s4 = float(cv2.compareHist(hist_a, hist_b, cv2.HISTCMP_CORREL))
+    except Exception:
+        s4 = 0.0
+
+    return (
+        0.42 * s1 +
+        0.22 * s2 +
+        0.18 * s3 +
+        0.18 * s4
+    )
 
 
 # =========================
@@ -355,7 +404,7 @@ def _detect_bans(img, rois, top_n=3):
         if ranked:
             best_name, best_score = ranked[0]
 
-        if best_score < CHAMP_MATCH_THRESHOLD:
+        if best_score < BAN_MATCH_THRESHOLD:
             result.append("")
         else:
             result.append(best_name)
@@ -372,8 +421,20 @@ def _detect_picks(img, rois, top_n=3):
     scores = []
     top_candidates = []
 
-    for roi in rois:
+    for idx, roi in enumerate(rois, 1):
         crop = crop_roi(img, roi)
+
+        if _is_empty_pick_slot(crop):
+            result.append("")
+            scores.append(0.0)
+            top_candidates.append([])
+            if DETECT_DEBUG:
+                std_val, edge_ratio = _slot_basic_stats(crop)
+                print(
+                    f"[pregame_pick_detector] pick_{idx} empty filtered "
+                    f"(std={std_val:.2f}, edge={edge_ratio:.4f})"
+                )
+            continue
 
         ranked = []
         for name, tmpl in templates.items():
@@ -396,16 +457,23 @@ def _detect_picks(img, rois, top_n=3):
 
         gap = best_score - second_score if second_score >= 0 else 1.0
 
-        # 확정 규칙 완화
-        if best_score < 0.56:
+        if best_score < PICK_MATCH_THRESHOLD:
             result.append("")
-        elif gap < 0.008:
+        elif gap < PICK_GAP_THRESHOLD:
             result.append("")
         else:
             result.append(best_name)
 
         scores.append(float(best_score))
         top_candidates.append(ranked[:top_n])
+
+        if DETECT_DEBUG:
+            top3_ko = [(_to_korean(n), s) for n, s in ranked[:3]]
+            print(
+                f"[pregame_pick_detector] pick_{idx} "
+                f"best={_to_korean(best_name)} score={best_score:.4f} gap={gap:.4f} "
+                f"top3={top3_ko}"
+            )
 
     return result, scores, top_candidates
 
@@ -425,7 +493,6 @@ def _save_debug_rois(img, roi_config, image_path: str):
         for i, roi in enumerate(rois, 1):
             crop = crop_roi(img, roi)
 
-            # 픽은 원형으로 저장, 밴/역할은 그대로 저장
             if group in ("ally_picks", "enemy_picks"):
                 crop_to_save = _apply_circle_mask_to_bgr(crop, size=162, shrink=0.90)
             else:
@@ -531,10 +598,10 @@ def scan_latest_draft_image(preferred_lane=""):
 
     if DETECT_DEBUG:
         print("[pregame_pick_detector] image:", path)
-        print("[pregame_pick_detector] ally_picks:", list(zip(ally_picks, ally_picks_scores)))
-        print("[pregame_pick_detector] enemy_picks:", list(zip(enemy_picks, enemy_picks_scores)))
-        print("[pregame_pick_detector] top ally picks:", ally_picks_top)
-        print("[pregame_pick_detector] top enemy picks:", enemy_picks_top)
+        print("[pregame_pick_detector] ally_picks:", list(zip(ally_picks_ko, ally_picks_scores)))
+        print("[pregame_pick_detector] enemy_picks:", list(zip(enemy_picks_ko, enemy_picks_scores)))
+        print("[pregame_pick_detector] top ally picks:", [[(_to_korean(n), s) for n, s in x] for x in ally_picks_top])
+        print("[pregame_pick_detector] top enemy picks:", [[(_to_korean(n), s) for n, s in x] for x in enemy_picks_top])
         print("[pregame_pick_detector] preview:", preview_path)
         print("[pregame_pick_detector] debug dir:", DEBUG_DIR)
 
