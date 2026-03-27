@@ -2,6 +2,7 @@ import os
 import cv2
 import numpy as np
 
+<<<<<<< HEAD
 
 INPUT_DIR = r"C:\Users\gimbe\OneDrive\Desktop\lol_project\대이터추출\자료"
 OUTPUT_DIR = r"C:\Users\gimbe\OneDrive\Desktop\lol_project\dataset\raw_slots"
@@ -27,6 +28,28 @@ ROI_CONFIG = {
         (2125, 455, 80, 80),
         (2125, 600, 80, 80),
         (2125, 745, 80, 80),
+=======
+INPUT_DIR = r"C:\Users\gimbe\OneDrive\Desktop\lol_project\대이터추출\자료"
+OUTPUT_DIR = r"C:\Users\gimbe\OneDrive\Desktop\lol_project\dataset\raw_slots"
+IMAGE_EXTS = (".png", ".jpg", ".jpeg", ".webp", ".bmp")
+USE_SCALED_ROI = False
+BASE_W = 2280
+BASE_H = 1080
+ROI_CONFIG = {
+    "ally_picks": [
+        (200, 150, 109, 109),
+        (200, 296, 109, 109),
+        (200, 445, 109, 109),
+        (200, 591, 109, 109),
+        (200, 738, 109, 109),
+    ],
+    "enemy_picks": [
+        (2105, 150, 109, 109),
+        (2105, 296, 109, 109),
+        (2105, 445, 109, 109),
+        (2105, 591, 109, 109),
+        (2105, 738, 109, 109),
+>>>>>>> 7ee4b1e27f2f59b1720ed49acf5fd01e07743c35
     ],
 }
 
@@ -190,4 +213,8 @@ def main():
 
 
 if __name__ == "__main__":
+<<<<<<< HEAD
     main()
+=======
+    main()
+>>>>>>> 7ee4b1e27f2f59b1720ed49acf5fd01e07743c35
