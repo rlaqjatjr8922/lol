@@ -2,54 +2,31 @@ import os
 import cv2
 import numpy as np
 
-<<<<<<< HEAD
 
 INPUT_DIR = r"C:\Users\gimbe\OneDrive\Desktop\lol_project\대이터추출\자료"
 OUTPUT_DIR = r"C:\Users\gimbe\OneDrive\Desktop\lol_project\dataset\raw_slots"
 
 IMAGE_EXTS = (".png", ".jpg", ".jpeg", ".webp", ".bmp")
 
-# detector 원복 버전과 동일
 USE_SCALED_ROI = False
 BASE_W = 2280
 BASE_H = 1080
 
+# 크게 잡고, 저장할 때 원형 바깥만 제거
 ROI_CONFIG = {
     "ally_picks": [
-        (220, 165, 80, 80),
-        (220, 310, 80, 80),
-        (220, 455, 80, 80),
-        (220, 600, 80, 80),
-        (220, 745, 80, 80),
+        (198, 146, 116, 116),
+        (198, 292, 116, 116),
+        (198, 438, 116, 116),
+        (198, 584, 116, 116),
+        (198, 730, 116, 116),
     ],
     "enemy_picks": [
-        (2125, 165, 80, 80),
-        (2125, 310, 80, 80),
-        (2125, 455, 80, 80),
-        (2125, 600, 80, 80),
-        (2125, 745, 80, 80),
-=======
-INPUT_DIR = r"C:\Users\gimbe\OneDrive\Desktop\lol_project\대이터추출\자료"
-OUTPUT_DIR = r"C:\Users\gimbe\OneDrive\Desktop\lol_project\dataset\raw_slots"
-IMAGE_EXTS = (".png", ".jpg", ".jpeg", ".webp", ".bmp")
-USE_SCALED_ROI = False
-BASE_W = 2280
-BASE_H = 1080
-ROI_CONFIG = {
-    "ally_picks": [
-        (200, 150, 109, 109),
-        (200, 296, 109, 109),
-        (200, 445, 109, 109),
-        (200, 591, 109, 109),
-        (200, 738, 109, 109),
-    ],
-    "enemy_picks": [
-        (2105, 150, 109, 109),
-        (2105, 296, 109, 109),
-        (2105, 445, 109, 109),
-        (2105, 591, 109, 109),
-        (2105, 738, 109, 109),
->>>>>>> 7ee4b1e27f2f59b1720ed49acf5fd01e07743c35
+        (2100, 146, 116, 116),
+        (2100, 292, 116, 116),
+        (2100, 438, 116, 116),
+        (2100, 584, 116, 116),
+        (2100, 730, 116, 116),
     ],
 }
 
@@ -150,6 +127,23 @@ def draw_roi_preview(img, roi_config):
     return preview
 
 
+def make_circle_masked_crop(crop):
+    h, w = crop.shape[:2]
+
+    mask = np.zeros((h, w), dtype=np.uint8)
+    cx = w // 2
+    cy = h // 2
+
+    # 얼굴은 충분히 살리고, 슬롯 테두리는 최대한 제거
+    r = int(min(h, w) * 0.44)
+
+    cv2.circle(mask, (cx, cy), r, 255, -1)
+
+    masked = np.zeros_like(crop)
+    masked[mask == 255] = crop[mask == 255]
+    return masked
+
+
 def export_slots_from_image(image_path: str):
     image_name = os.path.basename(image_path)
     stem = os.path.splitext(image_name)[0]
@@ -169,9 +163,11 @@ def export_slots_from_image(image_path: str):
 
         for idx, roi in enumerate(roi_list, 1):
             crop = crop_roi(img, roi)
+            masked = make_circle_masked_crop(crop)
+
             save_path = os.path.join(group_dir, f"{stem}__{group_name}_{idx}.png")
 
-            if write_image_korean(save_path, crop):
+            if write_image_korean(save_path, masked):
                 save_count += 1
             else:
                 print(f"[실패] 저장 실패: {save_path}")
@@ -213,8 +209,4 @@ def main():
 
 
 if __name__ == "__main__":
-<<<<<<< HEAD
     main()
-=======
-    main()
->>>>>>> 7ee4b1e27f2f59b1720ed49acf5fd01e07743c35
