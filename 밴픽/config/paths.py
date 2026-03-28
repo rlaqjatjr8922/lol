@@ -1,0 +1,30 @@
+from pathlib import Path
+
+BASE_DIR = Path(__file__).resolve().parent.parent
+
+DATASET_DIR = BASE_DIR / "dataset"
+
+RAW_SCREENS_DIR = DATASET_DIR / "raw_screens"
+RAW_PREGAME_DIR = RAW_SCREENS_DIR / "pregame"
+RAW_DEBUG_DIR = RAW_SCREENS_DIR / "debug"
+
+CHAMPION_DIR = DATASET_DIR / "champion"
+CHAMPION_CANONICAL_DIR = CHAMPION_DIR / "canonical"
+CHAMPION_BAN_CROP_DIR = CHAMPION_DIR / "ban_crop"
+CHAMPION_PICK_CROP_DIR = CHAMPION_DIR / "pick_crop"
+CHAMPION_HOVER_CROP_DIR = CHAMPION_DIR / "hover_crop"
+
+ROLE_DIR = DATASET_DIR / "role"
+ROLE_TEMPLATE_DIR = ROLE_DIR / "templates"
+ROLE_CROP_DIR = ROLE_DIR / "crop"
+
+UI_DIR = DATASET_DIR / "ui"
+UI_SLOTS_DIR = UI_DIR / "slots"
+UI_EMPTY_DIR = UI_SLOTS_DIR / "empty"
+UI_HOVER_DIR = UI_SLOTS_DIR / "hover"
+UI_LOCKED_DIR = UI_SLOTS_DIR / "locked"
+UI_BANNED_DIR = UI_SLOTS_DIR / "banned"
+
+DEBUG_DIR = DATASET_DIR / "debug"
+DEBUG_PREVIEW_DIR = DEBUG_DIR / "preview"
+DEBUG_RESULT_DIR = DEBUG_DIR / "result"
