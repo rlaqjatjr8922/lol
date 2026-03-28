@@ -1,7 +1,8 @@
-from config.paths import RAW_PREGAME_DIR, DATASET_DIR
+from config.paths import RAW_PREGAME_DIR, DATASET_DIR, DEBUG_RESULT_DIR
 from src.utils.image_io import list_images, read_image
 from src.extract.crop_slots import export_slots_from_image
 from src.match.champion_matcher import match_champion
+from src.match.match_debug import save_pair_debug
 
 
 def print_match_results(folder_path, title):
@@ -18,8 +19,19 @@ def print_match_results(folder_path, title):
             print(f"[실패] 읽기 실패: {image_path.name}")
             continue
 
-        name, score = match_champion(img)
+        name, score, best_raw, best_path = match_champion(img)
         print(f"{image_path.name} -> {name} ({score:.4f})")
+
+        if best_raw is not None and best_path is not None:
+            out_path = DEBUG_RESULT_DIR / f"{image_path.stem}__PAIR.png"
+            save_pair_debug(
+                output_path=out_path,
+                query_img=img,
+                cand_img=best_raw,
+                score=score,
+                query_name=image_path.name,
+                cand_name=best_path.name,
+            )
 
 
 def run_pregame_pipeline():

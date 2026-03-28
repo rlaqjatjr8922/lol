@@ -9,3 +9,4 @@ ALLY_PICKS_DIR = CHAMPION_PICK_CROP_DIR / 'ally_picks'
 ENEMY_PICKS_DIR = CHAMPION_PICK_CROP_DIR / 'enemy_picks'
 DEBUG_PREVIEW_DIR = DATASET_DIR / 'debug' / 'preview'
 CHAMPION_CANONICAL_DIR = DATASET_DIR / "champion" / "canonical"
+DEBUG_RESULT_DIR = DATASET_DIR / "debug" / "result"

@@ -41,7 +41,7 @@ def center_crop_square(img, mask):
     s = min(h, w)
     y1 = (h - s) // 2
     x1 = (w - s) // 2
-    return img[y1:y1+s, x1:x1+s], mask[y1:y1+s, x1:x1+s]
+    return img[y1:y1 + s, x1:x1 + s], mask[y1:y1 + s, x1:x1 + s]
 
 
 def make_circle_mask(size):
@@ -124,7 +124,7 @@ def center_region_mask(base_mask):
     s = base_mask.shape[0]
     inner = np.zeros_like(base_mask)
     pad = int(s * 0.18)
-    inner[pad:s-pad, pad:s-pad] = 255
+    inner[pad:s - pad, pad:s - pad] = 255
     return cv2.bitwise_and(base_mask, inner)
 
 
@@ -155,14 +155,16 @@ def score_pair(q, c):
 def match_champion(query_img):
     qicon = preprocess_icon_from_image(query_img)
     if qicon is None:
-        return "Unknown", 0.0
+        return "Unknown", 0.0, None, None
 
     templates = list_images(CHAMPION_CANONICAL_DIR)
     if not templates:
-        return "Unknown", 0.0
+        return "Unknown", 0.0, None, None
 
     best_name = "Unknown"
     best_score = -999.0
+    best_raw = None
+    best_path = None
 
     for template_path in templates:
         raw = read_image(template_path)
@@ -174,8 +176,10 @@ def match_champion(query_img):
         if score > best_score:
             best_score = score
             best_name = template_path.stem
+            best_raw = raw
+            best_path = template_path
 
     if best_score < MATCH_THRESHOLD:
-        return "Unknown", best_score
+        return "Unknown", best_score, best_raw, best_path
 
-    return best_name, best_score
+    return best_name, best_score, best_raw, best_path
