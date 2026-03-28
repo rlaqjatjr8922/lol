@@ -1,31 +1,21 @@
-# 밴픽 프로젝트
+# 밴픽
 
-## 목적
-와일드리프트 밴픽 화면에서
-- 챔피언 슬롯 crop
-- 역할 아이콘 crop
-- UI 상태 구분
-을 위한 데이터셋과 파이프라인 구성
+밴픽 화면 스크린샷에서 아군/적군 픽 슬롯을 잘라 저장하는 프로젝트입니다.
 
-## 시작 방법
+## 폴더
+- `dataset/raw_screens/pregame`: 원본 밴픽 이미지
+- `dataset/champion/canonical`: 챔피언 기준 이미지
+- `dataset/champion/pick_crop/ally_picks`: 아군 픽 슬롯 crop
+- `dataset/champion/pick_crop/enemy_picks`: 적군 픽 슬롯 crop
+- `dataset/debug/preview`: ROI preview
 
-### 1. 폴더 생성
-```bash
-python tools/make_folders.py
-```
-
-### 2. 원본 이미지 넣기
-`dataset/raw_screens/pregame` 폴더에 밴픽 화면 스크린샷 넣기
-
-### 3. 실행
+## 실행
 ```bash
 python run.py
 ```
 
-### 4. 결과 확인
-- ROI 미리보기: `dataset/debug/preview`
-- 잘라낸 슬롯 결과:
-  - `dataset/champion/hover_crop`
-  - `dataset/champion/pick_crop`
-  - `dataset/champion/ban_crop`
-  - `dataset/role/crop`
+## 현재 기능
+- 밴픽 원본 이미지 읽기
+- ally_picks / enemy_picks ROI crop
+- 원형 투명 PNG 저장
+- preview 이미지 저장
