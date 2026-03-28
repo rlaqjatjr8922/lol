@@ -1,496 +1,431 @@
 import os
-import json
-import shutil
-import math
-import tkinter as tk
-from tkinter import messagebox
-from PIL import Image, ImageTk, ImageOps
-
-import torch
-import torch.nn as nn
-from torchvision import transforms, models
-
+import cv2
+import numpy as np
 
 # =========================
-# 경로 설정
+# 경로
 # =========================
-SOURCE_DIR = r"C:\Users\gimbe\OneDrive\Desktop\lol_project\dataset\test"
-TARGET_DIR = r"C:\Users\gimbe\OneDrive\Desktop\lol_project\dataset\champion"
-MAP_PATH = r"C:\Users\gimbe\OneDrive\Desktop\lol_project\대이터추출\champion_map.json"
-STATE_MODEL_PATH = r"C:\Users\gimbe\OneDrive\Desktop\lol_project\dataset\state_classifier.pt"
+INPUT_DIR = r"C:\Users\gimbe\OneDrive\Desktop\lol_project\대이터추출\자료"
+OUTPUT_DIR = r"C:\Users\gimbe\OneDrive\Desktop\lol_project\대이터추출\결과"
+DEBUG_DIR = os.path.join(OUTPUT_DIR, "_debug")
 
 IMAGE_EXTS = (".png", ".jpg", ".jpeg", ".webp", ".bmp")
 
-MAX_W = 700
-MAX_H = 700
+# =========================
+# ROI (중앙 챔피언 목록 영역)
+# 직접 조금씩 수정 가능
+# =========================
+ROI = (560, 130, 1390, 910)   # x1, y1, x2, y2
 
-STATE_IMAGE_SIZE = 96
-DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+# =========================
+# 출력 박스 크기
+# =========================
+BOX_SIZE = 113
 
-# 비어있음 미리보기 썸네일 크기
-THUMB_SIZE = 120
-THUMB_COLS = 5
+# 최종 crop 중심 미세 이동
+SHIFT_X = 0
+SHIFT_Y = 0
 
+# =========================
+# 후보 필터
+# =========================
+MIN_W = 70
+MIN_H = 70
+MAX_W = 150
+MAX_H = 150
 
-def 상태모델_불러오기():
-    model = models.resnet18(weights=None)
-    model.fc = nn.Linear(model.fc.in_features, 2)
-    model.load_state_dict(torch.load(STATE_MODEL_PATH, map_location=DEVICE))
-    model = model.to(DEVICE)
-    model.eval()
-    return model
+MIN_AREA = 4500
+MAX_AREA = 22000
 
+ASPECT_MIN = 0.78
+ASPECT_MAX = 1.22
 
-def 픽됨_예측(model, image_path):
-    tf = transforms.Compose([
-        transforms.Resize((STATE_IMAGE_SIZE, STATE_IMAGE_SIZE)),
-        transforms.ToTensor(),
-    ])
+IOU_THRESH = 0.30
+CENTER_DIST_THRESH = 35
+ROW_MERGE_Y = 45
 
-    image = Image.open(image_path).convert("RGB")
-    x = tf(image).unsqueeze(0).to(DEVICE)
-
-    with torch.no_grad():
-        out = model(x)
-        probs = torch.softmax(out, dim=1)[0]
-        pred = out.argmax(dim=1).item()
-
-    # 0=비어있음, 1=픽됨
-    비어있음확률 = float(probs[0])
-    픽됨확률 = float(probs[1])
-
-    return pred == 1, 비어있음확률, 픽됨확률
+# 기대 레이아웃
+EXPECTED_COLS = 5
+MIN_KEEP = 12
+MAX_KEEP = 25
 
 
-class 비어있음확인창:
-    def __init__(self, root, 비어있음목록):
-        self.root = root
-        self.비어있음목록 = 비어있음목록
-        self.결정 = None
-        self.썸네일들 = []
+# =========================
+# 한글 경로 지원
+# =========================
+def imread_korean(path):
+    data = np.fromfile(path, dtype=np.uint8)
+    return cv2.imdecode(data, cv2.IMREAD_COLOR)
 
-        self.window = tk.Toplevel(root)
-        self.window.title("비어있음 이미지 확인")
-        self.window.geometry("900x780")
-        self.window.grab_set()
 
-        상단 = tk.Frame(self.window)
-        상단.pack(fill="x", padx=10, pady=10)
+def imwrite_korean(path, img):
+    ext = os.path.splitext(path)[1].lower()
+    if ext not in [".png", ".jpg", ".jpeg", ".webp", ".bmp"]:
+        ext = ".png"
+        path += ".png"
 
-        설명 = tk.Label(
-            상단,
-            text=f"비어있음으로 예측된 이미지 {len(비어있음목록)}개\n확인 후 한 번에 삭제하거나 유지할 수 있습니다.",
-            justify="left",
-            font=("맑은 고딕", 11, "bold"),
-            anchor="w"
+    ok, buf = cv2.imencode(ext, img)
+    if ok:
+        buf.tofile(path)
+
+
+# =========================
+# 유틸
+# =========================
+def box_area(box):
+    x1, y1, x2, y2 = box
+    return max(0, x2 - x1) * max(0, y2 - y1)
+
+
+def box_center(box):
+    x1, y1, x2, y2 = box
+    return ((x1 + x2) // 2, (y1 + y2) // 2)
+
+
+def iou(box1, box2):
+    x1, y1, x2, y2 = box1
+    a1, b1, a2, b2 = box2
+
+    ix1 = max(x1, a1)
+    iy1 = max(y1, b1)
+    ix2 = min(x2, a2)
+    iy2 = min(y2, b2)
+
+    if ix2 <= ix1 or iy2 <= iy1:
+        return 0.0
+
+    inter = (ix2 - ix1) * (iy2 - iy1)
+    union = box_area(box1) + box_area(box2) - inter
+    return inter / union if union > 0 else 0.0
+
+
+def center_dist(box1, box2):
+    c1x, c1y = box_center(box1)
+    c2x, c2y = box_center(box2)
+    return ((c1x - c2x) ** 2 + (c1y - c2y) ** 2) ** 0.5
+
+
+def clamp_box(box, w, h):
+    x1, y1, x2, y2 = box
+
+    if x1 < 0:
+        x2 += -x1
+        x1 = 0
+    if y1 < 0:
+        y2 += -y1
+        y1 = 0
+    if x2 > w:
+        x1 -= (x2 - w)
+        x2 = w
+    if y2 > h:
+        y1 -= (y2 - h)
+        y2 = h
+
+    if x1 < 0 or y1 < 0 or x2 > w or y2 > h:
+        return None
+
+    if (x2 - x1) != BOX_SIZE or (y2 - y1) != BOX_SIZE:
+        return None
+
+    return (x1, y1, x2, y2)
+
+
+def make_113_box(cx, cy):
+    half = BOX_SIZE // 2
+    return (
+        int(cx - half),
+        int(cy - half),
+        int(cx - half + BOX_SIZE),
+        int(cy - half + BOX_SIZE)
+    )
+
+
+# =========================
+# 전처리
+# =========================
+def preprocess_roi(roi):
+    gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
+
+    blur = cv2.GaussianBlur(gray, (5, 5), 0)
+
+    # 적응형 threshold
+    th_adapt = cv2.adaptiveThreshold(
+        blur, 255,
+        cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+        cv2.THRESH_BINARY,
+        31, 3
+    )
+
+    # edge
+    edge = cv2.Canny(blur, 60, 140)
+
+    # 합치기
+    mask = cv2.bitwise_or(th_adapt, edge)
+
+    # 작은 글씨/잡음 제거
+    mask = cv2.morphologyEx(
+        mask,
+        cv2.MORPH_OPEN,
+        np.ones((3, 3), np.uint8),
+        iterations=1
+    )
+
+    # 아이콘 네모 윤곽 연결
+    mask = cv2.morphologyEx(
+        mask,
+        cv2.MORPH_CLOSE,
+        np.ones((7, 7), np.uint8),
+        iterations=2
+    )
+
+    return gray, mask
+
+
+# =========================
+# 후보 검출
+# =========================
+def find_candidate_boxes(img):
+    h, w = img.shape[:2]
+    rx1, ry1, rx2, ry2 = ROI
+
+    rx1 = max(0, min(rx1, w - 1))
+    ry1 = max(0, min(ry1, h - 1))
+    rx2 = max(rx1 + 1, min(rx2, w))
+    ry2 = max(ry1 + 1, min(ry2, h))
+
+    roi = img[ry1:ry2, rx1:rx2]
+    gray, mask = preprocess_roi(roi)
+
+    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+    boxes = []
+
+    for cnt in contours:
+        x, y, bw, bh = cv2.boundingRect(cnt)
+        area = bw * bh
+
+        if bw < MIN_W or bh < MIN_H:
+            continue
+        if bw > MAX_W or bh > MAX_H:
+            continue
+        if area < MIN_AREA or area > MAX_AREA:
+            continue
+
+        ratio = bw / float(bh)
+        if ratio < ASPECT_MIN or ratio > ASPECT_MAX:
+            continue
+
+        # 정사각형으로 보정
+        side = max(bw, bh)
+        cx = x + bw / 2.0
+        cy = y + bh / 2.0
+
+        gx1 = int(rx1 + cx - side / 2)
+        gy1 = int(ry1 + cy - side / 2)
+        gx2 = int(gx1 + side)
+        gy2 = int(gy1 + side)
+
+        boxes.append((gx1, gy1, gx2, gy2))
+
+    return boxes, gray, mask
+
+
+# =========================
+# 중복 제거
+# =========================
+def dedupe_boxes(boxes):
+    scored = []
+    for b in boxes:
+        x1, y1, x2, y2 = b
+        w = x2 - x1
+        h = y2 - y1
+        area = w * h
+        ratio = min(w, h) / float(max(w, h) + 1e-6)
+        score = area * ratio
+        scored.append((score, b))
+
+    scored.sort(reverse=True, key=lambda x: x[0])
+
+    kept = []
+    for _, b in scored:
+        overlapped = False
+        for k in kept:
+            if iou(b, k) > IOU_THRESH or center_dist(b, k) < CENTER_DIST_THRESH:
+                overlapped = True
+                break
+        if not overlapped:
+            kept.append(b)
+
+    return kept
+
+
+# =========================
+# 행 정렬
+# =========================
+def cluster_rows(boxes):
+    if not boxes:
+        return []
+
+    boxes = sorted(boxes, key=lambda b: box_center(b)[1])
+
+    rows = []
+    for b in boxes:
+        _, cy = box_center(b)
+
+        placed = False
+        for row in rows:
+            row_cy = int(np.mean([box_center(x)[1] for x in row]))
+            if abs(cy - row_cy) <= ROW_MERGE_Y:
+                row.append(b)
+                placed = True
+                break
+
+        if not placed:
+            rows.append([b])
+
+    # 각 row 내부는 x 기준 정렬
+    for row in rows:
+        row.sort(key=lambda b: box_center(b)[0])
+
+    # row 전체는 y 기준 정렬
+    rows.sort(key=lambda row: np.mean([box_center(x)[1] for x in row]))
+
+    return rows
+
+
+def select_grid_boxes(boxes):
+    rows = cluster_rows(boxes)
+
+    cleaned_rows = []
+    for row in rows:
+        # 너무 적은 row 제거
+        if len(row) >= 2:
+            cleaned_rows.append(row)
+
+    if not cleaned_rows:
+        return []
+
+    # row 길이가 너무 크면 x 간격 보고 정리 가능하지만
+    # 일단 왼쪽→오른쪽 상위 5개만 사용
+    final_rows = []
+    for row in cleaned_rows:
+        row = sorted(row, key=lambda b: box_center(b)[0])
+        if len(row) > EXPECTED_COLS:
+            row = row[:EXPECTED_COLS]
+        final_rows.append(row)
+
+    # 전체 flatten
+    final = []
+    for row in final_rows:
+        final.extend(row)
+
+    # 최종 개수 제한
+    if len(final) > MAX_KEEP:
+        final = final[:MAX_KEEP]
+
+    return final
+
+
+# =========================
+# crop 처리
+# =========================
+def process_image(img, name):
+    h, w = img.shape[:2]
+
+    candidate_boxes, gray, mask = find_candidate_boxes(img)
+    candidate_boxes = dedupe_boxes(candidate_boxes)
+    final_boxes = select_grid_boxes(candidate_boxes)
+
+    saved_boxes = []
+    idx = 0
+
+    for b in final_boxes:
+        cx, cy = box_center(b)
+        cx += SHIFT_X
+        cy += SHIFT_Y
+
+        crop_box = make_113_box(cx, cy)
+        crop_box = clamp_box(crop_box, w, h)
+        if crop_box is None:
+            continue
+
+        x1, y1, x2, y2 = crop_box
+        crop = img[y1:y2, x1:x2]
+
+        if crop.shape[0] != BOX_SIZE or crop.shape[1] != BOX_SIZE:
+            continue
+
+        save_path = os.path.join(OUTPUT_DIR, f"{name}_{idx:02d}.png")
+        imwrite_korean(save_path, crop)
+
+        saved_boxes.append(crop_box)
+        idx += 1
+
+    # 디버그 이미지
+    dbg = img.copy()
+
+    # ROI
+    cv2.rectangle(dbg, (ROI[0], ROI[1]), (ROI[2], ROI[3]), (255, 0, 0), 2)
+
+    # 후보 박스
+    for (x1, y1, x2, y2) in candidate_boxes:
+        cv2.rectangle(dbg, (x1, y1), (x2, y2), (0, 180, 255), 1)
+
+    # 최종 crop 박스
+    for i, (x1, y1, x2, y2) in enumerate(saved_boxes):
+        cv2.rectangle(dbg, (x1, y1), (x2, y2), (0, 255, 0), 2)
+        cv2.putText(
+            dbg,
+            str(i),
+            (x1, max(20, y1 - 8)),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.7,
+            (0, 255, 255),
+            2,
+            cv2.LINE_AA
         )
-        설명.pack(anchor="w")
 
-        본문 = tk.Frame(self.window)
-        본문.pack(fill="both", expand=True, padx=10, pady=10)
+    imwrite_korean(os.path.join(DEBUG_DIR, f"{name}_debug.png"), dbg)
+    imwrite_korean(os.path.join(DEBUG_DIR, f"{name}_mask.png"), mask)
+    imwrite_korean(os.path.join(DEBUG_DIR, f"{name}_gray.png"), gray)
 
-        canvas = tk.Canvas(본문)
-        scrollbar = tk.Scrollbar(본문, orient="vertical", command=canvas.yview)
-        self.scroll_frame = tk.Frame(canvas)
-
-        self.scroll_frame.bind(
-            "<Configure>",
-            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
-        )
-
-        canvas.create_window((0, 0), window=self.scroll_frame, anchor="nw")
-        canvas.configure(yscrollcommand=scrollbar.set)
-
-        canvas.pack(side="left", fill="both", expand=True)
-        scrollbar.pack(side="right", fill="y")
-
-        self.썸네일_채우기()
-
-        하단 = tk.Frame(self.window)
-        하단.pack(fill="x", padx=10, pady=10)
-
-        유지버튼 = tk.Button(
-            하단,
-            text="삭제 안 함",
-            command=self.유지,
-            font=("맑은 고딕", 10)
-        )
-        유지버튼.pack(side="left")
-
-        삭제버튼 = tk.Button(
-            하단,
-            text="비어있음 전부 삭제",
-            command=self.삭제,
-            font=("맑은 고딕", 10, "bold"),
-            bg="#d9534f",
-            fg="white"
-        )
-        삭제버튼.pack(side="right")
-
-        self.window.protocol("WM_DELETE_WINDOW", self.유지)
-
-    def 썸네일_채우기(self):
-        for idx, item in enumerate(self.비어있음목록):
-            path = item["path"]
-            file_name = os.path.basename(path)
-
-            try:
-                pil = Image.open(path).convert("RGB")
-                pil = ImageOps.contain(pil, (THUMB_SIZE, THUMB_SIZE))
-                photo = ImageTk.PhotoImage(pil)
-                self.썸네일들.append(photo)
-
-                cell = tk.Frame(self.scroll_frame, bd=1, relief="solid", padx=5, pady=5)
-                r = idx // THUMB_COLS
-                c = idx % THUMB_COLS
-                cell.grid(row=r, column=c, padx=6, pady=6, sticky="n")
-
-                img_label = tk.Label(cell, image=photo)
-                img_label.pack()
-
-                txt = tk.Label(
-                    cell,
-                    text=f"{file_name}\n비어있음={item['empty_prob']:.3f}\n픽됨={item['picked_prob']:.3f}",
-                    justify="left",
-                    font=("맑은 고딕", 8),
-                    wraplength=140
-                )
-                txt.pack()
-            except Exception as e:
-                cell = tk.Frame(self.scroll_frame, bd=1, relief="solid", padx=5, pady=5)
-                r = idx // THUMB_COLS
-                c = idx % THUMB_COLS
-                cell.grid(row=r, column=c, padx=6, pady=6, sticky="n")
-                txt = tk.Label(cell, text=f"{file_name}\n미리보기 실패\n{e}", font=("맑은 고딕", 8))
-                txt.pack()
-
-    def 삭제(self):
-        self.결정 = "삭제"
-        self.window.destroy()
-
-    def 유지(self):
-        self.결정 = "유지"
-        self.window.destroy()
-
-
-class 챔피언분류기UI:
-    def __init__(self, root):
-        self.root = root
-        self.root.title("챔피언 분류기")
-        self.root.geometry("1100x850")
-
-        self.상태모델 = self.상태모델_준비()
-        self.영한맵 = self.맵_불러오기()  # 영어 -> 한국어
-        self.한영맵 = {kor: eng for eng, kor in self.영한맵.items()}  # 한국어 -> 영어
-        self.한글이름목록 = sorted(self.한영맵.keys())
-
-        self.삭제된개수 = 0
-        self.비어있음후보목록 = []
-        self.파일목록 = self.이미지목록_불러오기_및_비픽분리()
-        self.비어있음_일괄확인_및_삭제()
-
-        self.현재인덱스 = 0
-        self.tk이미지 = None
-
-        self.UI_만들기()
-
-        if not self.파일목록:
-            messagebox.showinfo(
-                "안내",
-                f"표시할 픽 이미지가 없습니다.\n삭제된 비어있음 이미지 수: {self.삭제된개수}"
-            )
-        else:
-            self.현재이미지_표시()
-
-    def 상태모델_준비(self):
-        if not os.path.exists(STATE_MODEL_PATH):
-            messagebox.showerror("오류", f"상태 모델 파일 없음:\n{STATE_MODEL_PATH}")
-            self.root.destroy()
-            raise SystemExit
-        return 상태모델_불러오기()
-
-    def 맵_불러오기(self):
-        if not os.path.exists(MAP_PATH):
-            messagebox.showerror("오류", f"맵 파일 없음:\n{MAP_PATH}")
-            self.root.destroy()
-            raise SystemExit
-
-        with open(MAP_PATH, "r", encoding="utf-8") as f:
-            return json.load(f)
-
-    def 이미지목록_불러오기_및_비픽분리(self):
-        if not os.path.exists(SOURCE_DIR):
-            os.makedirs(SOURCE_DIR, exist_ok=True)
-            return []
-
-        전체파일 = []
-        for name in os.listdir(SOURCE_DIR):
-            if name.lower().endswith(IMAGE_EXTS):
-                전체파일.append(os.path.join(SOURCE_DIR, name))
-        전체파일.sort()
-
-        남길파일 = []
-
-        for path in 전체파일:
-            try:
-                픽됨, 비어있음확률, 픽됨확률 = 픽됨_예측(self.상태모델, path)
-
-                if 픽됨:
-                    남길파일.append(path)
-                else:
-                    self.비어있음후보목록.append({
-                        "path": path,
-                        "empty_prob": 비어있음확률,
-                        "picked_prob": 픽됨확률
-                    })
-            except Exception as e:
-                print(f"[예측 실패] {os.path.basename(path)} | {e}")
-
-        return 남길파일
-
-    def 비어있음_일괄확인_및_삭제(self):
-        if not self.비어있음후보목록:
-            return
-
-        확인창 = 비어있음확인창(self.root, self.비어있음후보목록)
-        self.root.wait_window(확인창.window)
-
-        if 확인창.결정 == "삭제":
-            for item in self.비어있음후보목록:
-                path = item["path"]
-                if os.path.exists(path):
-                    try:
-                        os.remove(path)
-                        self.삭제된개수 += 1
-                        print(
-                            f"[삭제] {os.path.basename(path)} | "
-                            f"비어있음={item['empty_prob']:.4f}, 픽됨={item['picked_prob']:.4f}"
-                        )
-                    except Exception as e:
-                        print(f"[삭제 실패] {os.path.basename(path)} | {e}")
-        else:
-            print("[안내] 비어있음 이미지 삭제 안 함")
-
-    def UI_만들기(self):
-        상단프레임 = tk.Frame(self.root)
-        상단프레임.pack(fill="x", padx=10, pady=10)
-
-        self.상태라벨 = tk.Label(
-            상단프레임,
-            text="대기 중",
-            font=("맑은 고딕", 12, "bold"),
-            anchor="w"
-        )
-        self.상태라벨.pack(fill="x")
-
-        본문프레임 = tk.Frame(self.root)
-        본문프레임.pack(fill="both", expand=True, padx=10, pady=10)
-
-        # 왼쪽 이미지 영역
-        이미지프레임 = tk.Frame(본문프레임)
-        이미지프레임.pack(side="left", fill="both", expand=True)
-
-        self.파일명라벨 = tk.Label(
-            이미지프레임,
-            text="파일명",
-            font=("맑은 고딕", 11, "bold")
-        )
-        self.파일명라벨.pack(pady=(0, 10))
-
-        self.이미지라벨 = tk.Label(
-            이미지프레임,
-            text="이미지 없음",
-            bg="#222222",
-            fg="white",
-            width=80,
-            height=40
-        )
-        self.이미지라벨.pack(fill="both", expand=True)
-
-        # 오른쪽 선택 영역
-        우측프레임 = tk.Frame(본문프레임, width=320)
-        우측프레임.pack(side="right", fill="y", padx=(15, 0))
-        우측프레임.pack_propagate(False)
-
-        설명라벨 = tk.Label(
-            우측프레임,
-            text="챔피언 선택",
-            font=("맑은 고딕", 12, "bold")
-        )
-        설명라벨.pack(anchor="w", pady=(0, 8))
-
-        self.검색변수 = tk.StringVar()
-        self.검색변수.trace_add("write", self.리스트필터)
-
-        검색엔트리 = tk.Entry(
-            우측프레임,
-            textvariable=self.검색변수,
-            font=("맑은 고딕", 11)
-        )
-        검색엔트리.pack(fill="x", pady=(0, 8))
-        검색엔트리.focus()
-
-        리스트프레임 = tk.Frame(우측프레임)
-        리스트프레임.pack(fill="both", expand=True)
-
-        스크롤바 = tk.Scrollbar(리스트프레임)
-        스크롤바.pack(side="right", fill="y")
-
-        self.리스트박스 = tk.Listbox(
-            리스트프레임,
-            font=("맑은 고딕", 11),
-            yscrollcommand=스크롤바.set,
-            exportselection=False
-        )
-        self.리스트박스.pack(side="left", fill="both", expand=True)
-        스크롤바.config(command=self.리스트박스.yview)
-
-        for 이름 in self.한글이름목록:
-            self.리스트박스.insert("end", 이름)
-
-        버튼프레임 = tk.Frame(우측프레임)
-        버튼프레임.pack(fill="x", pady=(10, 0))
-
-        이동버튼 = tk.Button(
-            버튼프레임,
-            text="선택한 챔피언으로 이동",
-            command=self.선택이동,
-            font=("맑은 고딕", 10, "bold"),
-            bg="#4CAF50",
-            fg="white"
-        )
-        이동버튼.pack(fill="x", pady=(0, 8))
-
-        건너뛰기버튼 = tk.Button(
-            버튼프레임,
-            text="건너뛰기",
-            command=self.건너뛰기,
-            font=("맑은 고딕", 10)
-        )
-        건너뛰기버튼.pack(fill="x", pady=(0, 8))
-
-        이전버튼 = tk.Button(
-            버튼프레임,
-            text="이전 이미지",
-            command=self.이전이미지,
-            font=("맑은 고딕", 10)
-        )
-        이전버튼.pack(fill="x")
-
-        안내라벨 = tk.Label(
-            우측프레임,
-            text=f"목록은 한국어 표시\n선택하면 영어 폴더로 이동\n비어있음은 먼저 전부 보여준 뒤 일괄 삭제 ({self.삭제된개수}개 삭제)",
-            justify="left",
-            fg="gray30",
-            font=("맑은 고딕", 9)
-        )
-        안내라벨.pack(anchor="w", pady=(10, 0))
-
-        self.리스트박스.bind("<Double-Button-1>", lambda e: self.선택이동())
-        self.root.bind("<Return>", lambda e: self.선택이동())
-        self.root.bind("<Right>", lambda e: self.건너뛰기())
-        self.root.bind("<Left>", lambda e: self.이전이미지())
-
-    def 리스트필터(self, *args):
-        검색어 = self.검색변수.get().strip().lower()
-
-        self.리스트박스.delete(0, "end")
-        for 이름 in self.한글이름목록:
-            if 검색어 in 이름.lower():
-                self.리스트박스.insert("end", 이름)
-
-    def 현재이미지_표시(self):
-        if not self.파일목록:
-            self.상태라벨.config(
-                text=f"표시할 픽 이미지가 없습니다. 삭제된 비어있음 이미지: {self.삭제된개수}개"
-            )
-            self.파일명라벨.config(text="완료")
-            self.이미지라벨.config(image="", text="모든 이미지 처리 완료")
-            return
-
-        if self.현재인덱스 < 0:
-            self.현재인덱스 = 0
-        if self.현재인덱스 >= len(self.파일목록):
-            self.현재인덱스 = len(self.파일목록) - 1
-
-        이미지경로 = self.파일목록[self.현재인덱스]
-        파일명 = os.path.basename(이미지경로)
-
-        self.상태라벨.config(
-            text=f"진행: {self.현재인덱스 + 1} / {len(self.파일목록)} | 삭제된 비어있음: {self.삭제된개수}개"
-        )
-        self.파일명라벨.config(text=파일명)
-
-        pil = Image.open(이미지경로).convert("RGB")
-        w, h = pil.size
-
-        배율 = min(MAX_W / w, MAX_H / h, 1.0)
-        새크기 = (int(w * 배율), int(h * 배율))
-        pil = pil.resize(새크기)
-
-        self.tk이미지 = ImageTk.PhotoImage(pil)
-        self.이미지라벨.config(image=self.tk이미지, text="")
-
-    def 선택가져오기(self):
-        선택 = self.리스트박스.curselection()
-        if not 선택:
-            return None
-        return self.리스트박스.get(선택[0])
-
-    def 선택이동(self):
-        if not self.파일목록:
-            return
-
-        한글이름 = self.선택가져오기()
-        if 한글이름 is None:
-            messagebox.showwarning("안내", "챔피언을 먼저 선택하세요.")
-            return
-
-        영어이름 = self.한영맵.get(한글이름)
-        if 영어이름 is None:
-            messagebox.showerror("오류", f"맵에 없는 챔피언입니다:\n{한글이름}")
-            return
-
-        원본경로 = self.파일목록[self.현재인덱스]
-        파일명 = os.path.basename(원본경로)
-
-        대상폴더 = os.path.join(TARGET_DIR, 영어이름)
-        os.makedirs(대상폴더, exist_ok=True)
-
-        대상경로 = os.path.join(대상폴더, 파일명)
-
-        shutil.move(원본경로, 대상경로)
-
-        del self.파일목록[self.현재인덱스]
-
-        if self.현재인덱스 >= len(self.파일목록) and self.현재인덱스 > 0:
-            self.현재인덱스 -= 1
-
-        self.현재이미지_표시()
-
-    def 건너뛰기(self):
-        if not self.파일목록:
-            return
-
-        self.현재인덱스 += 1
-        if self.현재인덱스 >= len(self.파일목록):
-            self.현재인덱스 = 0
-        self.현재이미지_표시()
-
-    def 이전이미지(self):
-        if not self.파일목록:
-            return
-
-        self.현재인덱스 -= 1
-        if self.현재인덱스 < 0:
-            self.현재인덱스 = len(self.파일목록) - 1
-        self.현재이미지_표시()
+    return len(saved_boxes)
 
 
 def main():
-    root = tk.Tk()
-    챔피언분류기UI(root)
-    root.mainloop()
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
+    os.makedirs(DEBUG_DIR, exist_ok=True)
+
+    if not os.path.isdir(INPUT_DIR):
+        print("❌ INPUT_DIR 없음")
+        return
+
+    files = [f for f in os.listdir(INPUT_DIR) if f.lower().endswith(IMAGE_EXTS)]
+    if not files:
+        print("❌ 이미지 없음")
+        return
+
+    total = 0
+
+    for f in files:
+        path = os.path.join(INPUT_DIR, f)
+        img = imread_korean(path)
+
+        if img is None:
+            print(f"[실패] {f}")
+            continue
+
+        print(f"처리중: {f}")
+        name = os.path.splitext(f)[0]
+
+        count = process_image(img, name)
+        print(f" -> {count}개 저장")
+
+        total += count
+
+    print(f"\n완료: 총 {total}개")
+    print("결과 폴더:", OUTPUT_DIR)
+    print("디버그 폴더:", DEBUG_DIR)
 
 
 if __name__ == "__main__":

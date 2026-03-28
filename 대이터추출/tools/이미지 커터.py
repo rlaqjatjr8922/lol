@@ -126,20 +126,27 @@ def draw_roi_preview(img, roi_config):
     return preview
 
 
-def make_circle_masked_crop(crop):
+def make_circle_transparent_crop(crop):
     h, w = crop.shape[:2]
 
+    # BGR -> BGRA
+    bgra = cv2.cvtColor(crop, cv2.COLOR_BGR2BGRA)
+
+    # 알파 마스크
     mask = np.zeros((h, w), dtype=np.uint8)
     cx = w // 2
     cy = h // 2
-
     r = int(min(h, w) * 0.44)
 
     cv2.circle(mask, (cx, cy), r, 255, -1)
 
-    masked = np.zeros_like(crop)
-    masked[mask == 255] = crop[mask == 255]
-    return masked
+    # 알파 채널 적용
+    bgra[:, :, 3] = mask
+
+    # 바깥 영역 RGB도 0으로 정리
+    bgra[mask == 0] = (0, 0, 0, 0)
+
+    return bgra
 
 
 def export_slots_from_image(image_path: str):
@@ -161,22 +168,22 @@ def export_slots_from_image(image_path: str):
 
         for idx, roi in enumerate(roi_list, 1):
             crop = crop_roi(img, roi)
-            masked = make_circle_masked_crop(crop)
+            transparent_crop = make_circle_transparent_crop(crop)
 
+            # 투명 저장은 PNG로 고정
             save_path = os.path.join(group_dir, f"{stem}__{group_name}_{idx}.png")
 
-            if write_image_korean(save_path, masked):
+            if write_image_korean(save_path, transparent_crop):
                 save_count += 1
             else:
                 print(f"[실패] 저장 실패: {save_path}")
 
-    # ✅ preview 저장 (원본 이름 그대로)
+    # preview 저장
     preview = draw_roi_preview(img, cfg)
     preview_dir = os.path.join(OUTPUT_DIR, "_preview")
     ensure_dir(preview_dir)
 
-    preview_path = os.path.join(preview_dir, image_name)  # 🔥 여기 수정됨
-
+    preview_path = os.path.join(preview_dir, image_name)
     write_image_korean(preview_path, preview)
 
     print(f"[완료] {image_name} -> {save_count}개 저장")
