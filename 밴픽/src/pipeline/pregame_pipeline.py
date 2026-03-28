@@ -33,7 +33,17 @@ def run_pregame_pipeline():
 
     for image_path in image_paths:
         print(f"[처리] {image_path.name}")
-        export_slots_from_image(str(image_path))
+
+        img = read_image(image_path)
+        if img is None:
+            print(f"[실패] 이미지 읽기 실패: {image_path.name}")
+            continue
+
+        export_slots_from_image(
+            img=img,
+            image_stem=image_path.stem,
+            original_name=image_path.name,
+        )
 
     ally_dir = DATASET_DIR / "champion" / "pick_crop" / "ally_picks"
     enemy_dir = DATASET_DIR / "champion" / "pick_crop" / "enemy_picks"
