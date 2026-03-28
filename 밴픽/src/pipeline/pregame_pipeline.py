@@ -32,6 +32,7 @@ def print_match_results(folder_path, title):
                 query_name=image_path.name,
                 cand_name=best_path.name,
             )
+            print(f"[PAIR 저장] {out_path}")
 
 
 def run_pregame_pipeline():
