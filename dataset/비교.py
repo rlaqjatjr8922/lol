@@ -1,5 +1,4 @@
 import os
-import csv
 import cv2
 import numpy as np
 
@@ -7,11 +6,10 @@ import numpy as np
 # 경로
 # =========================
 QUERY_DIR = r"C:\Users\gimbe\OneDrive\Desktop\lol_project\dataset\자료"
-CANDIDATE_DIR = r"C:\Users\gimbe\OneDrive\Desktop\lol_project\dataset\픽"
+CANDIDATE_DIR = r"C:\Users\gimbe\OneDrive\Desktop\lol_project\dataset\champion"
 OUTPUT_DIR = r"C:\Users\gimbe\OneDrive\Desktop\lol_project\dataset\결과"
 
-PAIR_DIR = os.path.join(OUTPUT_DIR, "pairs_v2")
-CSV_PATH = os.path.join(OUTPUT_DIR, "match_results_v2.csv")
+PAIR_DIR = os.path.join(OUTPUT_DIR, "pairs")
 
 IMAGE_EXTS = (".png", ".jpg", ".jpeg", ".webp", ".bmp")
 
@@ -19,14 +17,9 @@ IMAGE_EXTS = (".png", ".jpg", ".jpeg", ".webp", ".bmp")
 # 매칭 설정
 # =========================
 MATCH_SIZE = 112
-
-# 원형 안쪽만 보도록 마스크 반지름
 MASK_RADIUS_RATIO = 0.42
-
-# 아래쪽 작은 문양/테두리 영향 줄이기
 BOTTOM_CUT_RATIO = 0.86
 
-# 최종 점수 가중치
 W_GRAY = 0.50
 W_HIST = 0.25
 W_EDGE = 0.15
@@ -67,7 +60,7 @@ def imwrite_korean(path: str, img) -> bool:
             os.makedirs(folder, exist_ok=True)
 
         ext = os.path.splitext(path)[1].lower()
-        if ext not in [".png", ".jpg", ".jpeg", ".webp", ".bmp"]:
+        if ext not in IMAGE_EXTS:
             ext = ".png"
             path += ".png"
 
@@ -85,14 +78,6 @@ def imwrite_korean(path: str, img) -> bool:
 # 이미지 보정
 # =========================
 def alpha_to_bgr_and_mask(img):
-    """
-    img:
-      - BGR
-      - BGRA
-      - Gray
-    return:
-      bgr, mask(0/255)
-    """
     if img is None:
         return None, None
 
@@ -126,7 +111,6 @@ def make_circle_mask(size):
     r = int(size * MASK_RADIUS_RATIO)
     cv2.circle(mask, (c, c), r, 255, -1)
 
-    # 아래쪽 작은 문양/테두리 영향 제거
     cut_y = int(size * BOTTOM_CUT_RATIO)
     mask[cut_y:, :] = 0
     return mask
@@ -147,11 +131,8 @@ def preprocess_icon(path: str):
     alpha_mask = cv2.resize(alpha_mask, (MATCH_SIZE, MATCH_SIZE), interpolation=cv2.INTER_NEAREST)
 
     circle_mask = make_circle_mask(MATCH_SIZE)
-
-    # 투명 PNG면 alpha와 원형 마스크를 둘 다 반영
     final_mask = cv2.bitwise_and(alpha_mask, circle_mask)
 
-    # 마스크가 너무 작으면 원형 마스크만 사용
     if np.count_nonzero(final_mask) < (MATCH_SIZE * MATCH_SIZE * 0.10):
         final_mask = circle_mask
 
@@ -173,9 +154,6 @@ def preprocess_icon(path: str):
 # 특징 추출 / 유사도
 # =========================
 def masked_corr(img1, img2, mask):
-    """
-    mask가 켜진 부분만 가지고 정규화 상관계수 계산
-    """
     idx = mask > 0
     a = img1[idx].astype(np.float32)
     b = img2[idx].astype(np.float32)
@@ -196,9 +174,6 @@ def masked_corr(img1, img2, mask):
 
 
 def masked_hist_score(hsv1, hsv2, mask):
-    """
-    원형 안쪽 HSV 히스토그램 비교
-    """
     hist1 = cv2.calcHist([hsv1], [0, 1], mask, [24, 16], [0, 180, 0, 256])
     hist2 = cv2.calcHist([hsv2], [0, 1], mask, [24, 16], [0, 180, 0, 256])
 
@@ -220,7 +195,6 @@ def center_region_mask(base_mask):
 
 
 def score_pair(q, c):
-    # 두 이미지 공통으로 켜진 부분만 비교
     common_mask = cv2.bitwise_and(q["mask"], c["mask"])
 
     if np.count_nonzero(common_mask) < 400:
@@ -247,6 +221,14 @@ def score_pair(q, c):
 # =========================
 # 결과 이미지 생성
 # =========================
+def preview_bgr(icon):
+    bgr = icon["bgr"].copy()
+    mask = icon["mask"]
+    out = np.full_like(bgr, 255)
+    out[mask > 0] = bgr[mask > 0]
+    return out
+
+
 def resize_keep(img, size):
     tw, th = size
     h, w = img.shape[:2]
@@ -258,16 +240,8 @@ def resize_keep(img, size):
     canvas = np.full((th, tw, 3), 255, dtype=np.uint8)
     x = (tw - nw) // 2
     y = (th - nh) // 2
-    canvas[y:y + nh, x:x + nw] = resized
+    canvas[y:y+nh, x:x+nw] = resized
     return canvas
-
-
-def preview_bgr(icon):
-    bgr = icon["bgr"].copy()
-    mask = icon["mask"]
-    out = np.full_like(bgr, 255)
-    out[mask > 0] = bgr[mask > 0]
-    return out
 
 
 def make_pair_image(q, c, score):
@@ -305,6 +279,22 @@ def make_pair_image(q, c, score):
 
 
 # =========================
+# 저장 이름 중복 방지
+# =========================
+def make_unique_output_path(folder: str, base_name: str, ext: str):
+    path = os.path.join(folder, f"{base_name}{ext}")
+    if not os.path.exists(path):
+        return path
+
+    idx = 1
+    while True:
+        path = os.path.join(folder, f"{base_name}_{idx}{ext}")
+        if not os.path.exists(path):
+            return path
+        idx += 1
+
+
+# =========================
 # 메인
 # =========================
 def main():
@@ -320,14 +310,13 @@ def main():
         return
 
     if not cand_paths:
-        print("[오류] 픽 폴더에 이미지가 없습니다.")
+        print("[오류] champion 폴더에 이미지가 없습니다.")
         print("CANDIDATE_DIR =", CANDIDATE_DIR)
         return
 
     print(f"[INFO] query images: {len(query_paths)}")
     print(f"[INFO] candidate images: {len(cand_paths)}")
 
-    # 후보 전처리 캐시
     candidate_icons = []
     for path in cand_paths:
         icon = preprocess_icon(path)
@@ -340,7 +329,7 @@ def main():
         print("[오류] 비교 가능한 후보 이미지가 없습니다.")
         return
 
-    rows = []
+    saved_count = 0
 
     for qpath in query_paths:
         qicon = preprocess_icon(qpath)
@@ -361,25 +350,36 @@ def main():
             print(f"[실패] 매칭 실패: {qpath}")
             continue
 
-        qname = os.path.splitext(os.path.basename(qpath))[0]
-        bname = os.path.basename(best_icon["path"])
+        champ_name = os.path.splitext(os.path.basename(best_icon["path"]))[0]
+        raw = imread_korean(qpath)
+        if raw is None:
+            print(f"[건너뜀] 원본 읽기 실패: {qpath}")
+            continue
+
+        ext = os.path.splitext(qpath)[1].lower()
+        if ext not in IMAGE_EXTS:
+            ext = ".png"
+
+        out_path = make_unique_output_path(OUTPUT_DIR, champ_name, ext)
+
+        ok = imwrite_korean(out_path, raw)
+        if not ok:
+            print(f"[실패] 저장 실패: {qpath}")
+            continue
 
         pair_img = make_pair_image(qicon, best_icon, best_score)
+        qname = os.path.splitext(os.path.basename(qpath))[0]
         pair_path = os.path.join(PAIR_DIR, f"{qname}__PAIR.png")
         imwrite_korean(pair_path, pair_img)
 
-        rows.append([qpath, best_icon["path"], f"{best_score:.6f}"])
-        print(f"[MATCH] {os.path.basename(qpath)} -> {bname} ({best_score:.4f})")
-
-    with open(CSV_PATH, "w", newline="", encoding="utf-8-sig") as f:
-        writer = csv.writer(f)
-        writer.writerow(["query_image", "best_match", "score"])
-        writer.writerows(rows)
+        saved_count += 1
+        print(f"[SAVE] {os.path.basename(qpath)} -> {os.path.basename(out_path)} ({best_score:.4f})")
 
     print()
     print("[DONE]")
+    print("SAVED =", saved_count)
+    print("OUTPUT_DIR =", OUTPUT_DIR)
     print("PAIR_DIR =", PAIR_DIR)
-    print("CSV_PATH =", CSV_PATH)
 
 
 if __name__ == "__main__":
