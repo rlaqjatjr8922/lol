@@ -1,11 +1,9 @@
 from config.paths import RAW_PREGAME_DIR, DATASET_DIR, DEBUG_RESULT_DIR, DEBUG_PREVIEW_DIR
 from src.utils.image_io import list_images, read_image, save_image
 from src.extract.crop_slots import export_slots_from_image
-
 from src.match.champion_matcher import match_champion
 from src.match.role_matcher import is_role_icon, match_role
 from src.match.match_debug import save_pair_debug
-
 from src.match.slot_turn_detector import (
     detect_turn_slot,
     draw_turn_debug,
@@ -20,7 +18,6 @@ def process_team(folder_path):
     results = []
 
     image_paths = sorted(list_images(folder_path))
-
     for image_path in image_paths:
         img = read_image(image_path)
         if img is None:
@@ -59,9 +56,34 @@ def process_team(folder_path):
     return results
 
 
+def _format_ratio_map(d):
+    parts = []
+    for k in sorted(d.keys()):
+        parts.append(f"{k}:{d[k]:.2f}")
+    return "{" + ", ".join(parts) + "}"
+
+
+def run_recommend_logic(turn_info):
+    """
+    추천 로직 실행 자리
+    현재는 로그만 찍음
+    나중에 여기서 챔피언 추천 함수 연결하면 됨
+    """
+    print("\n=== 추천 로직 실행 ===")
+    print(f"아군 픽 차례: {turn_info['is_ally_pick_turn']}")
+    print(f"노랑 감지: {turn_info['is_my_turn']}")
+    print("조건 만족 -> 추천 시작")
+
+    # TODO:
+    # 여기서 실제 추천 함수 연결
+    # 예:
+    # recommend_pick(...)
+    # build_recommendation(...)
+    # save_recommend_result(...)
+
+
 def run_pregame_pipeline():
     image_paths = list_images(RAW_PREGAME_DIR)
-
     if not image_paths:
         print("[안내] dataset/raw_screens/pregame 폴더에 이미지가 없습니다.")
         return
@@ -69,7 +91,7 @@ def run_pregame_pipeline():
     print("=== 밴픽 파이프라인 시작 ===")
 
     for image_path in image_paths:
-        print(f"[처리] {image_path.name}")
+        print(f"\n[처리] {image_path.name}")
 
         img = read_image(image_path)
         if img is None:
@@ -81,34 +103,65 @@ def run_pregame_pipeline():
         # =========================
         turn_info = detect_turn_slot(img)
 
+        print("[TURN RAW]")
+        print(f"  BLUE slots    = {turn_info['blue_slots']}")
+        print(f"  YELLOW slots  = {turn_info['yellow_slots']}")
+        print(f"  RED slots     = {turn_info['red_slots']}")
+        print(f"  BLUE ratios   = {_format_ratio_map(turn_info['blue_slot_ratios'])}")
+        print(f"  YELLOW ratios = {_format_ratio_map(turn_info['yellow_slot_ratios'])}")
+        print(f"  RED ratios    = {_format_ratio_map(turn_info['red_slot_ratios'])}")
+
+        print("[TURN PATTERN]")
+        print(f"  ally_active_slots = {turn_info['ally_active_slots']}")
+        print(f"  enemy_active_slots = {turn_info['enemy_active_slots']}")
+        print(f"  ally_pattern = {turn_info['ally_pattern']}")
+        print(f"  enemy_pattern = {turn_info['enemy_pattern']}")
+        print(f"  ally_stage = {turn_info['ally_stage']}")
+        print(f"  enemy_stage = {turn_info['enemy_stage']}")
+        print(f"  pick_turn_team = {turn_info['pick_turn_team']}")
+
+        if turn_info["is_ally_pick_turn"]:
+            print("  아군이 지금 픽할 차례")
+        elif turn_info["is_enemy_pick_turn"]:
+            print("  적군이 지금 픽할 차례")
+        else:
+            print("  픽 차례 판정 불가")
+
+        print("[TURN RESULT]")
         print(
-            f"[TURN] "
-            f"blue_y={turn_info['blue_y']} "
-            f"yellow_y={turn_info['yellow_y']} "
-            f"red_y={turn_info['red_y']} "
-            f"blue_s={turn_info['blue_strength']} "
-            f"yellow_s={turn_info['yellow_strength']} "
-            f"red_s={turn_info['red_strength']} "
-            f"ally_slot={turn_info['ally_slot']} "
-            f"enemy_slot={turn_info['enemy_slot']}"
+            f"  ally_slot={turn_info['ally_slot']} "
+            f"enemy_slot={turn_info['enemy_slot']} "
+            f"is_my_turn={turn_info['is_my_turn']}"
         )
 
         if turn_info["is_my_turn"]:
-            print(f"🔥 지금 내 차례로 감지됨 (아군 슬롯 {turn_info['ally_slot']})")
+            print(f"  노랑 불 감지됨 (아군 슬롯 {turn_info['ally_slot']})")
         else:
-            print(f"⏳ 아군 진행 위치 감지 (아군 슬롯 {turn_info['ally_slot']})")
-
-        print(f"🟥 상대 진행 위치 감지 (적군 슬롯 {turn_info['enemy_slot']})")
+            print(f"  노랑 불 없음")
 
         is_now, is_next = is_my_turn_soon(turn_info["ally_slot"], MY_PICK_SLOT)
-
         if is_now:
-            print("🚨 지금 내 픽 차례 → 추천 실행")
+            print("  지금 내 픽 차례")
         elif is_next:
-            print("⚠️ 다음이 내 차례 → 추천 준비")
+            print("  다음이 내 픽 차례")
 
         # =========================
-        # 2) 턴 ROI 저장
+        # 2) 추천 로직 실행 조건
+        # =========================
+        should_run_recommend = (
+            turn_info["is_ally_pick_turn"] and
+            turn_info["is_my_turn"]
+        )
+
+        print(f"[RECOMMEND CHECK] should_run_recommend = {should_run_recommend}")
+
+        if should_run_recommend:
+            run_recommend_logic(turn_info)
+        else:
+            print("추천 로직 실행 안 함")
+
+        # =========================
+        # 3) 턴 ROI 저장
         # =========================
         ally_roi_img = crop_ally_turn_roi(img)
         ally_roi_path = DEBUG_PREVIEW_DIR / f"{image_path.stem}__ALLY_TURN_ROI.png"
@@ -121,7 +174,7 @@ def run_pregame_pipeline():
         print(f"[ENEMY TURN ROI 저장] {enemy_roi_path}")
 
         # =========================
-        # 3) 턴 디버그 이미지 저장
+        # 4) 턴 디버그 이미지 저장
         # =========================
         turn_debug = draw_turn_debug(img, turn_info)
         turn_debug_path = DEBUG_PREVIEW_DIR / f"{image_path.stem}__TURN_DEBUG.png"
@@ -129,7 +182,7 @@ def run_pregame_pipeline():
         print(f"[TURN DEBUG 저장] {turn_debug_path}")
 
         # =========================
-        # 4) 기존 슬롯 crop 저장
+        # 5) 기존 슬롯 crop 저장
         # =========================
         export_slots_from_image(
             img=img,
@@ -137,16 +190,16 @@ def run_pregame_pipeline():
             original_name=image_path.name,
         )
 
-    # =========================
-    # 5) crop된 슬롯 매칭
-    # =========================
-    ally_dir = DATASET_DIR / "champion" / "pick_crop" / "ally_picks"
-    enemy_dir = DATASET_DIR / "champion" / "pick_crop" / "enemy_picks"
+        # =========================
+        # 6) crop된 슬롯 매칭
+        # =========================
+        ally_dir = DATASET_DIR / "champion" / "pick_crop" / "ally_picks"
+        enemy_dir = DATASET_DIR / "champion" / "pick_crop" / "enemy_picks"
 
-    print("\n=== ALLY PICKS MATCH ===")
-    process_team(ally_dir)
+        print("\n=== ALLY PICKS MATCH ===")
+        process_team(ally_dir)
 
-    print("\n=== ENEMY PICKS MATCH ===")
-    process_team(enemy_dir)
+        print("\n=== ENEMY PICKS MATCH ===")
+        process_team(enemy_dir)
 
     print("\n=== 완료 ===")
