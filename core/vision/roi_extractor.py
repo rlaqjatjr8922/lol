@@ -12,8 +12,14 @@ class ROIExtractor:
 
         x1 = int(w * x1_ratio)
         y1 = int(h * y1_ratio)
-        x2 = int(w * x2_ratio)
-        y2 = int(h * y2_ratio)
+
+        # support both [x1, y1, x2, y2] and [x, y, width, height]
+        if x2_ratio <= x1_ratio or y2_ratio <= y1_ratio:
+            x2 = int(w * min(1.0, x1_ratio + x2_ratio))
+            y2 = int(h * min(1.0, y1_ratio + y2_ratio))
+        else:
+            x2 = int(w * x2_ratio)
+            y2 = int(h * y2_ratio)
 
         x1 = max(0, min(w, x1))
         x2 = max(0, min(w, x2))

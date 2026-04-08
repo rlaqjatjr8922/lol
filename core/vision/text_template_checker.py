@@ -60,7 +60,7 @@ class TextTemplateChecker:
 
         return float(result[0][0])
 
-    def check(self, roi, template_paths):
+    def check(self, roi, template_paths, threshold=None):
         self.last_debug = None
 
         if roi is None:
@@ -76,6 +76,7 @@ class TextTemplateChecker:
 
         roi_proc = self._preprocess(roi_gray)
         base_dir = Path(__file__).resolve().parents[2]
+        threshold = self.threshold if threshold is None else threshold
 
         matched_items = []
 
@@ -88,22 +89,28 @@ class TextTemplateChecker:
 
             template = self._read_image_unicode(full_template_path)
             if template is None:
+                print(f"[TemplateChecker] template load 실패: {full_template_path}")
                 continue
 
             try:
                 template_gray = cv2.cvtColor(template, cv2.COLOR_BGR2GRAY)
-            except Exception:
+            except Exception as e:
+                print(f"[TemplateChecker] template cvtColor 실패: {full_template_path}, {e}")
                 continue
 
             template_proc = self._preprocess(template_gray)
+            if template_proc is None:
+                print(f"[TemplateChecker] template preprocess 실패: {full_template_path}, shape={template_gray.shape}")
+
             score = self._compare_images(roi_proc, template_proc)
+            print(f"[TemplateChecker] template={full_template_path.name}, score={score:.3f}, roi_proc={'OK' if roi_proc is not None else 'None'}, template_proc={'OK' if template_proc is not None else 'None'}")
 
             if score > best_score:
                 best_score = score
                 best_name = full_template_path.name
                 best_template_image = template.copy()
 
-            if score >= self.threshold:
+            if score >= threshold:
                 matched_items.append({
                     "name": full_template_path.name,
                     "score": score,
@@ -119,11 +126,9 @@ class TextTemplateChecker:
         if len(matched_items) == 0:
             return False, None, -1.0
 
-        if len(matched_items) >= 2:
+        if len(matched_items) > 1:
             names = [item["name"] for item in matched_items]
-            raise RuntimeError(
-                f"[TemplateChecker] threshold({self.threshold}) 넘는 템플릿 2개 이상: {names}"
-            )
+            print(f"[TemplateChecker] 경고: {len(matched_items)}개 템플릿이 threshold({threshold})를 넘었습니다: {names}")
 
-        matched = matched_items[0]
+        matched = max(matched_items, key=lambda item: item["score"])
         return True, matched["name"], matched["score"]

@@ -18,6 +18,8 @@ class StickChecker:
         self.color_ratio_threshold = 0.90
 
         self.my_pick_slot = 5
+        self.ally_hsv_ranges = None
+        self.enemy_hsv_ranges = None
 
         self.debug_dir = None
         if self.debug:
@@ -239,30 +241,61 @@ class StickChecker:
     # 색 파싱
     # =========================
 
-    def _resolve_color_ranges(self, colors):
+    def _parse_hsv_ranges(self, hsv_range_list):
+        if not hsv_range_list:
+            return []
+
+        parsed = []
+        for rng in hsv_range_list:
+            if not isinstance(rng, (list, tuple)) or len(rng) != 2:
+                continue
+            lower, upper = rng
+            parsed.append(
+                (
+                    np.array(lower, dtype=np.uint8),
+                    np.array(upper, dtype=np.uint8),
+                )
+            )
+
+        return parsed
+
+    def _resolve_color_ranges(self, colors, ally_hsv_ranges=None, enemy_hsv_ranges=None):
         """
         config의 colors를 받아 HSV 범위 dict로 변환
         기대 예시:
         ["blue", "yellow", "red"]
         """
         result = {}
+        parsed_ally = self._parse_hsv_ranges(ally_hsv_ranges)
+        parsed_enemy = self._parse_hsv_ranges(enemy_hsv_ranges)
 
         for c in colors:
             name = str(c).strip().lower()
 
             if name == "yellow":
-                result["yellow"] = [
-                    (np.array((18, 90, 90), dtype=np.uint8), np.array((40, 255, 255), dtype=np.uint8)),
-                ]
+                if len(parsed_ally) >= 1:
+                    result["yellow"] = [parsed_ally[0]]
+                else:
+                    result["yellow"] = [
+                        (np.array((18, 90, 90), dtype=np.uint8), np.array((40, 255, 255), dtype=np.uint8)),
+                    ]
             elif name == "blue":
-                result["blue"] = [
-                    (np.array((85, 80, 80), dtype=np.uint8), np.array((130, 255, 255), dtype=np.uint8)),
-                ]
+                if len(parsed_ally) >= 2:
+                    result["blue"] = [parsed_ally[1]]
+                elif len(parsed_ally) == 1:
+                    result["blue"] = [parsed_ally[0]]
+                else:
+                    result["blue"] = [
+                        (np.array((85, 80, 80), dtype=np.uint8), np.array((130, 255, 255), dtype=np.uint8)),
+                    ]
             elif name == "red":
-                result["red"] = [
-                    (np.array((0, 140, 140), dtype=np.uint8), np.array((8, 255, 255), dtype=np.uint8)),
-                    (np.array((172, 140, 140), dtype=np.uint8), np.array((179, 255, 255), dtype=np.uint8)),
-                ]
+                if parsed_enemy:
+                    result["red"] = parsed_enemy
+                else:
+                    result["red"] = [
+                        (np.array((0, 140, 140), dtype=np.uint8), np.array((8, 255, 255), dtype=np.uint8)),
+                        (np.array((172, 140, 140), dtype=np.uint8), np.array((179, 255, 255), dtype=np.uint8)),
+                    ]
 
         if "blue" not in result:
             result["blue"] = [
@@ -339,11 +372,17 @@ class StickChecker:
         - 적 턴이면 enemy_slot 사용
         - 둘 다 없으면 None
         """
-        if is_my_turn and ally_slot is not None:
-            return ally_slot
+        if is_my_turn:
+            if ally_slot is not None:
+                return ally_slot
+            if self.my_pick_slot is not None:
+                return self.my_pick_slot
 
-        if pick_turn_team == "ally" and ally_slot is not None:
-            return ally_slot
+        if pick_turn_team == "ally":
+            if ally_slot is not None:
+                return ally_slot
+            if self.my_pick_slot is not None:
+                return self.my_pick_slot
 
         if pick_turn_team == "enemy" and enemy_slot is not None:
             return enemy_slot
@@ -414,7 +453,7 @@ class StickChecker:
     # 메인 check
     # =========================
 
-    def check(self, ally_roi, enemy_roi, colors):
+    def check(self, ally_roi, enemy_roi, colors, stage_config=None):
         """
         반환:
             불 들어온 막대기 번호 set
@@ -428,7 +467,19 @@ class StickChecker:
             self.last_info = {}
             return set()
 
-        color_ranges = self._resolve_color_ranges(colors)
+        if stage_config is not None:
+            self.slot_count = stage_config.get("slot_count", self.slot_count)
+            self.my_pick_slot = stage_config.get("my_pick_slot", self.my_pick_slot)
+            self.color_ratio_threshold = stage_config.get("color_ratio_threshold", self.color_ratio_threshold)
+            self.inner_top_ratio = stage_config.get("inner_top_ratio", self.inner_top_ratio)
+            self.inner_bottom_ratio = stage_config.get("inner_bottom_ratio", self.inner_bottom_ratio)
+            ally_hsv_ranges = stage_config.get("ally_hsv_ranges")
+            enemy_hsv_ranges = stage_config.get("enemy_hsv_ranges")
+        else:
+            ally_hsv_ranges = None
+            enemy_hsv_ranges = None
+
+        color_ranges = self._resolve_color_ranges(colors, ally_hsv_ranges, enemy_hsv_ranges)
 
         ally_blue = self._segment_color_presence(
             ally_roi,

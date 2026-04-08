@@ -5,14 +5,16 @@
       "template_path": [
         "assets/line/내셔 남작.jpg",
         "assets/line/중단.jpg"
-      ]
+      ],
+      "threshold": 0.03
     },
 
     "1": {
       "writing": [0.4434, 0.0222, 0.5596, 0.0540],
       "template_path": [
         "assets/pick/상대 선택 중.png"
-      ]
+      ],
+      "threshold": 0.03
     },
 
     "2": {
