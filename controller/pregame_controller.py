@@ -12,18 +12,29 @@ class PregameController:
 
         self.base_dir = Path(__file__).resolve().parents[1]
         self.debug_dir = self.base_dir / "debug"
-        self.config_path = self.base_dir / "data" / "config.json"
 
-        self.config = self._load_json(self.config_path)
-        self.stages = self.config["stages"]
+        self.detect_config_path = self.base_dir / "data" / "detect_stages.json"
+        self.gpt_config_path = self.base_dir / "data" / "gpt_stages.json"
+
+        self.detect_config = self._load_json(self.detect_config_path)
+        self.gpt_config = self._load_json(self.gpt_config_path)
+
+        self.detect_stages = self.detect_config["stages"]
+        self.gpt_stages = self.gpt_config["gpt"]
+
+        self.app_state.detect_stages = self.detect_stages
+        self.app_state.gpt_stages = self.gpt_stages
+        self.app_state.debug_dir = str(self.debug_dir)
 
         self._clear_debug()
 
         self.screen_source = ScreenSource()
+
         self.pipeline = PregamePipeline(
-            self.app_state,
-            self.screen_source,
-            self.stages
+            app_state=self.app_state,
+            screen_source=self.screen_source,
+            detect_stages=self.detect_stages,
+            gpt_stages=self.gpt_stages
         )
 
     def _load_json(self, path):
