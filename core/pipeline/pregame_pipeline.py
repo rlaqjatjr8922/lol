@@ -5,6 +5,7 @@ from core.pipeline.GPTStage import GPTStage
 from core.pipeline.StickStage import StickStage
 from core.pipeline.BanChampionStage import BanChampionStage
 from core.pipeline.UIStage import UIStage
+from core.pipeline.debug import debug
 
 from core.vision.roi_extractor import ROIExtractor
 from core.vision.stick_checker import StickChecker
@@ -34,7 +35,6 @@ class PregamePipeline:
 
         self.gpt_stage = GPTStage(
             self.app_state,
-            self.gpt_stages
         )
 
         self.stick_stage = StickStage(
@@ -55,6 +55,10 @@ class PregamePipeline:
             self.app_state
         )
 
+        self.debug = debug(
+            self.app_state
+        )
+
     def run(self):
         print("[PregamePipeline] 시작")
 
@@ -62,40 +66,47 @@ class PregamePipeline:
             current_stage = self.app_state.stage
             print(f"[PregamePipeline] 현재 stage = {current_stage}")
 
-            # 0단계: 첫 화면 텍스트/템플릿 감지
             if current_stage == 0:
-                print("[PregamePipeline] TextStage 0 시도")
-                self.text_stage.run(self.detect_stages["0"])
+                print("[PregamePipeline] TextStage text0 시도")
+                if not self.text_stage.run(self.detect_stages["text0"]):
+                    print("[PregamePipeline] TextStage text0 실패")
+                    print("[PregamePipeline] ui stage 시도")
+                    self.ui_stage.run()
 
-            # 1단계: 상대 선택 중 감지 -> GPT 1 -> UI
             elif current_stage == 1:
-                print("[PregamePipeline] TextStage 1 시도")
-
-                if self.text_stage.run(self.detect_stages["1"]):
-                    print("[PregamePipeline] TextStage 1 성공")
-
-                    print("[PregamePipeline] GPTStage 1 시도")
-                    if self.gpt_stage.run("1"):
-                        print("[PregamePipeline] GPTStage 1 성공")
+                print("[PregamePipeline] TextStage text1 시도")
+                if not self.text_stage.run(self.detect_stages["text1"]):
+                    print("[PregamePipeline] TextStage text1 실패")
+                    if self.gpt_stage.run("0"):
+                        print("[PregamePipeline] GPTStage 0 성공")
+                        print("[PregamePipeline] ui stage 시도")
                         self.ui_stage.run()
 
-            # 2단계: 턴 바 / 픽 상태 감지 -> 챔피언 분석 -> GPT 2 -> UI
             elif current_stage == 2:
-                print("[PregamePipeline] StickStage 2 시도")
+                print("[PregamePipeline] TextStage text2 시도")
 
-                if self.stick_stage.run(self.detect_stages["2"]):
-                    print("[PregamePipeline] StickStage 2 성공")
+                if not self.text_stage.run(self.detect_stages["text2"]):
+                    print("[PregamePipeline] TextStage text2 실패")
+                    print("[PregamePipeline] BanChampionStage ban_champion1 시도")
+                    if self.ban_champion_stage.run(self.detect_stages["ban_champion1"]):
+                        print("[PregamePipeline] BanChampionStage ban_champion1 성공")
+                        print("[PregamePipeline] GPTStage 1 시도")
+                        if self.gpt_stage.run("1"):
+                            print("[PregamePipeline] GPTStage 1 성공")
+                            self.ui_stage.run()
 
-                    print("[PregamePipeline] BanChampionStage 2 시도")
-                    self.ban_champion_stage.run(self.detect_stages["2"])
+            elif current_stage == 3:
+                print("[PregamePipeline] StickStage stick1 시도")
 
+                if self.stick_stage.run(self.detect_stages["stick1"]):
+                    print("[PregamePipeline] StickStage stick1 성공")
                     print("[PregamePipeline] GPTStage 2 시도")
+
                     if self.gpt_stage.run("2"):
                         print("[PregamePipeline] GPTStage 2 성공")
                         self.ui_stage.run()
 
-            # 3단계: 마지막 GPT 추천 -> UI -> 종료
-            elif current_stage == 3:
+            elif current_stage == 4:
                 print("[PregamePipeline] GPTStage 3 시도")
 
                 if self.gpt_stage.run("3"):
@@ -110,4 +121,5 @@ class PregamePipeline:
                 print("[PregamePipeline] 완료")
                 return True
 
+            self.debug.save()
             time.sleep(0.1)

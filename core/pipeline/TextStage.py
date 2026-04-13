@@ -11,47 +11,64 @@ class TextStage:
     def run(self, stage_config):
         print("[TextStage] 시작")
 
-        if stage_config is None:
-            print("[TextStage] stage_config 없음")
-            return False
-
-        writing_roi = stage_config.get("writing")
-        template_paths = stage_config.get("template_path", [])
-        threshold = stage_config.get("threshold", 0.03)
-
-        if writing_roi is None:
-            print("[TextStage] writing 값 없음")
-            return False
-
-        if not template_paths:
-            print("[TextStage] template_path 값 없음")
-            return False
+        writing_roi = stage_config["writing"]
+        template_paths = stage_config["template_path"]
+        threshold = stage_config["threshold"]
 
         frame = self.screen_source.capture()
-        if frame is None:
-            print("[TextStage] frame 캡처 실패")
-            return False
-
         self.app_state.current_frame = frame
 
+        roi_list = []
         roi = self.roi_extractor.extract(frame, writing_roi)
-        if roi is None:
-            print("[TextStage] ROI 추출 실패")
-            return False
+        roi_list.append(roi)
 
-        self.app_state.current_roi = roi
+        current_results = []
 
-        matched_path, matched_score = self.text_checker.check(
-            roi=roi,
-            template_paths=template_paths,
-            threshold=threshold
-        )
+        debug_stage = self.app_state.debug["TextStage"]
+        debug_stage["original"] = frame
+        debug_stage["roi"] = []
+        debug_stage["processed"] = []
+        debug_stage["result"] = []
 
+        for roi in roi_list:
+            self.app_state.current_roi = roi
+
+            matched, matched_path, matched_score, matched_template_img = self.text_checker.check(
+                roi=roi,
+                template_paths=template_paths,
+                threshold=threshold
+            )
+
+            if roi is not None:
+                debug_stage["roi"].append(roi)
+
+            last_debug = self.text_checker.last_debug
+
+            if last_debug is not None:
+                roi_steps = last_debug.get("roi_steps", [])
+                matched_template_steps = last_debug.get("matched_template_steps", [])
+
+                for step_name, img in roi_steps:
+                    if img is not None:
+                        debug_stage["processed"].append(img)
+
+                for step_name, img in matched_template_steps:
+                    if img is not None:
+                        debug_stage["processed"].append(img)
+
+            if matched_template_img is not None and roi is not None:
+                debug_stage["result"].append([matched_template_img, roi, matched_score])
+
+            current_results.append((matched, matched_path, matched_score))
+
+        matched, matched_path, matched_score = current_results[0]
+
+        print(f"[TextStage] matched = {matched}")
         print(f"[TextStage] matched_path = {matched_path}")
         print(f"[TextStage] matched_score = {matched_score}")
 
-        if matched_path is None:
-            print("[TextStage] 조건 불만족")
+        if not matched:
+            print("[TextStage] 매칭 실패")
             return False
 
         cleaned_name = os.path.basename(matched_path)
@@ -60,8 +77,7 @@ class TextStage:
         self.app_state.last_matched_template = cleaned_name
         self.app_state.last_matched_score = matched_score
 
-        if hasattr(self.app_state, "stage"):
-            self.app_state.stage += 1
-            print(f"[TextStage] 다음 stage = {self.app_state.stage}")
+        self.app_state.stage += 1
+        print(f"[TextStage] 다음 stage = {self.app_state.stage}")
 
         return True
