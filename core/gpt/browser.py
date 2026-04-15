@@ -1,7 +1,5 @@
 import subprocess
-import time
 from pathlib import Path
-
 from playwright.sync_api import sync_playwright
 
 
@@ -17,8 +15,16 @@ class GPTBrowser:
         self.context = None
         self.page = None
 
+        # 🔥 자동 실행
+
+    def start_and_connect(self):
+        self.start()
+        self.connect()
+    # -------------------------
+    # 크롬 실행
+    # -------------------------
     def start(self):
-        print("[browser] GPT 크롬 디버그 모드 실행")
+        print("[browser] 크롬 실행")
 
         self.user_data_dir.mkdir(parents=True, exist_ok=True)
 
@@ -33,10 +39,11 @@ class GPTBrowser:
             stderr=subprocess.DEVNULL,
         )
 
-        time.sleep(2)
-
+    # -------------------------
+    # playwright 연결
+    # -------------------------
     def connect(self):
-        print("[browser] CDP 연결 시도")
+        print("[browser] playwright 연결")
 
         self.playwright = sync_playwright().start()
 
@@ -45,142 +52,86 @@ class GPTBrowser:
         )
 
         if not self.browser.contexts:
-            raise RuntimeError("브라우저 context가 없음")
+            raise RuntimeError("context 없음")
 
         self.context = self.browser.contexts[0]
 
-        self.page = self._get_chatgpt_page()
-
-        try:
-            self.page.wait_for_load_state("domcontentloaded", timeout=15000)
-        except Exception:
-            pass
-
-        time.sleep(2)
+        # 페이지 가져오기 or 생성
+        if self.context.pages:
+            self.page = self.context.pages[0]
+        else:
+            self.page = self.context.new_page()
+            self.page.goto(self.url)
 
         print("[browser] 연결 완료")
-        return self.page
 
-    def start_and_connect(self):
-        self.start()
-        return self.connect()
-
-    def _is_chatgpt_page(self, page):
-        try:
-            url = page.url or ""
-            return "chatgpt.com" in url or "chat.openai.com" in url
-        except Exception:
-            return False
-
-    def _get_chatgpt_page(self):
-        for page in self.context.pages:
-            if self._is_chatgpt_page(page):
-                try:
-                    page.bring_to_front()
-                except Exception:
-                    pass
-                return page
-
-        page = self.context.new_page()
-        page.goto(self.url, wait_until="domcontentloaded", timeout=30000)
-        return page
-
-    def _get_input_box(self):
+    # -------------------------
+    # 응답 중지 버튼 클릭
+    # -------------------------
+    def stop_response(self):
         selectors = [
-            "div[contenteditable='true'][role='textbox']",
-            "div[contenteditable='true']",
-            "textarea",
+            "button[data-testid='stop-button']",
+            "button[aria-label*='Stop']",
         ]
-
+    
         for selector in selectors:
             try:
-                locator = self.page.locator(selector).first
-                locator.wait_for(state="visible", timeout=10000)
-                return locator
+                btn = self.page.locator(selector).first
+                if btn.is_visible(timeout=300):
+                    btn.click()
+                    print("[browser] 응답 중지")
+                    return True
             except Exception:
                 continue
+            
+        return False
 
-        raise RuntimeError("ChatGPT 입력창을 찾지 못함")
+    # -------------------------
+    # 프롬프트 전송
+    # -------------------------
+    def send_new_prompt(self, text):
+        if not text or not text.strip():
+            raise ValueError("입력값 없음")
 
-    def _clear_input(self, input_box):
+        input_box = self.page.locator(
+            "div[contenteditable='true'][role='textbox']"
+        ).first
+
+        input_box.wait_for(state="visible", timeout=10000)
+
+        # 기존 내용 삭제
         try:
             input_box.click()
-        except Exception:
-            pass
-
-        try:
-            input_box.fill("")
-            return
-        except Exception:
-            pass
-
-        try:
             self.page.keyboard.press("Control+A")
             self.page.keyboard.press("Backspace")
         except Exception:
             pass
 
-    def _click_send_button(self):
-        selectors = [
-            "button[data-testid='send-button']",
-            "button[aria-label*='Send']",
-            "button:has-text('Send')",
-        ]
-
-        for selector in selectors:
-            try:
-                btn = self.page.locator(selector).first
-                if btn.is_visible(timeout=500):
-                    btn.click()
-                    return True
-            except Exception:
-                continue
-
-        return False
-
-    def a(self, prompt):
-        if not prompt or not prompt.strip():
-            raise ValueError("prompt가 비어 있음")
-
-        input_box = self._get_input_box()
-        self._clear_input(input_box)
-
+        # 입력
         try:
-            input_box.fill(prompt)
+            input_box.fill(text)
         except Exception:
-            input_box.type(prompt, delay=10)
+            input_box.type(text, delay=10)
 
-        sent = self._click_send_button()
+        # 전송
+        input_box.press("Enter")
 
-        if not sent:
-            try:
-                input_box.press("Enter")
-                sent = True
-            except Exception:
-                pass
+        print("[browser] 전송 완료")
 
-        if not sent:
-            raise RuntimeError("프롬프트 전송 실패")
+    # -------------------------
+    # 생성 중 여부 (Stop 버튼 기준)
+    # -------------------------
+    def is_generating(self):
+        try:
+            btn = self.page.locator("button[data-testid='stop-button']").first
+            return btn.is_visible(timeout=200)
+        except:
+            return False
 
-        print("[browser] 프롬프트 전송 완료")
-
-    def b(self):
-        selectors = [
-            "button:has-text('Stop')",
-            "button[aria-label*='Stop']",
-        ]
-
-        for selector in selectors:
-            try:
-                btn = self.page.locator(selector).first
-                if btn.is_visible(timeout=300):
-                    return True
-            except Exception:
-                continue
-
-        return False
-
-    def _get_last_answer(self):
+    # -------------------------
+    # 마지막 응답 가져오기
+    # -------------------------
+    def get_last_answer(self):
         selectors = [
             "[data-message-author-role='assistant']",
             "article",
@@ -194,37 +145,13 @@ class GPTBrowser:
                 if count == 0:
                     continue
 
-                for i in range(count - 1, -1, -1):
-                    text = nodes.nth(i).inner_text().strip()
-                    if text:
-                        return text
+                text = nodes.nth(count - 1).inner_text().strip()
+
+                if text:
+                    return text
+
             except Exception:
                 continue
 
         return ""
 
-    def c(self, timeout_sec=120):
-        start = time.time()
-        stable_count = 0
-        last_text = ""
-
-        while time.time() - start < timeout_sec:
-            if self.b():
-                time.sleep(0.8)
-                continue
-
-            current_text = self._get_last_answer()
-
-            if current_text and current_text == last_text:
-                stable_count += 1
-            else:
-                stable_count = 0
-                last_text = current_text
-
-            if stable_count >= 3:
-                print("[browser] 응답 읽기 완료")
-                return current_text
-
-            time.sleep(1.0)
-
-        raise TimeoutError("GPT 응답 대기 시간 초과")
