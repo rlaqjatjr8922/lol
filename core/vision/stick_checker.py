@@ -1,600 +1,298 @@
-import os
-from pathlib import Path
-
 import cv2
 import numpy as np
 
 
 class StickChecker:
-    def __init__(self, debug=False, slot_count=5):
-        self.debug = debug
-        self.slot_count = slot_count
-        self.last_info = {}
+    def __init__(self):
+        self.last_debug = None
+        self.last_info = None
 
-        self.turn_slot_centers = [1, 2, 3, 4, 5]
+    def _init_debug(self):
+        self.last_debug = {
+            "ally_slot_results": [],
+            "enemy_slot_results": [],
+            "summary": {},
+        }
 
-        self.inner_top_ratio = 0.06
-        self.inner_bottom_ratio = 0.94
-        self.color_ratio_threshold = 0.90
+    def _get_hsv_ranges(self, stage_config):
+        default_ranges = {
+            "blue": [
+                ((90, 80, 80), (130, 255, 255)),
+            ],
+            "yellow": [
+                ((15, 80, 80), (40, 255, 255)),
+            ],
+            "red": [
+                ((0, 80, 80), (10, 255, 255)),
+                ((170, 80, 80), (180, 255, 255)),
+            ],
+        }
+        return stage_config.get("hsv_ranges", default_ranges)
 
-        self.my_pick_slot = 5
-        self.ally_hsv_ranges = None
-        self.enemy_hsv_ranges = None
+    def _get_color_thresholds(self, stage_config):
+        default_thresholds = {
+            "blue": 0.08,
+            "yellow": 0.08,
+            "red": 0.08,
+        }
+        return stage_config.get("color_thresholds", default_thresholds)
 
-        self.debug_dir = None
-        if self.debug:
-            base_dir = Path(__file__).resolve().parents[2]
-            self.debug_dir = base_dir / "debug" / "stick"
-            self.debug_dir.mkdir(parents=True, exist_ok=True)
+    def _get_slot_count(self, stage_config):
+        return int(stage_config.get("slot_count", 5))
 
-    # =========================
-    # 내부 유틸
-    # =========================
+    def _get_slot_crop_ratio(self, stage_config):
+        """
+        각 슬롯 안에서 실제 검사할 가로 비율.
+        너무 넓게 보면 슬롯 경계가 섞일 수 있어서 중앙 부분만 사용.
+        """
+        return float(stage_config.get("slot_crop_ratio", 0.72))
 
-    def _open_mask(self, mask):
+    def _get_vertical_crop_ratio(self, stage_config):
+        """
+        상하 여백 제거용 비율.
+        """
+        return float(stage_config.get("vertical_crop_ratio", 0.80))
+
+    def _build_mask(self, hsv_img, color_name, hsv_ranges):
+        mask = None
+        for lower, upper in hsv_ranges.get(color_name, []):
+            lower_np = np.array(lower, dtype=np.uint8)
+            upper_np = np.array(upper, dtype=np.uint8)
+            partial = cv2.inRange(hsv_img, lower_np, upper_np)
+            if mask is None:
+                mask = partial
+            else:
+                mask = cv2.bitwise_or(mask, partial)
+
+        if mask is None:
+            mask = np.zeros(hsv_img.shape[:2], dtype=np.uint8)
+
+        return mask
+
+    def _clean_mask(self, mask):
         kernel = np.ones((3, 3), np.uint8)
-        return cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
+        mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
+        mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
+        return mask
 
-    def _calc_mask_ratio(self, mask):
-        total = mask.size
-        if total <= 0:
-            return 0.0
-        return float(np.count_nonzero(mask)) / float(total)
+    def _split_slots(self, roi, slot_count, slot_crop_ratio, vertical_crop_ratio):
+        h, w = roi.shape[:2]
+        slot_width = w / slot_count
+        slot_imgs = []
 
-    def _build_slot_ranges(self, height, slot_count):
-        """
-        잘린 ROI 이미지의 높이를 slot_count개로 균등 분할.
-        return: [(slot_idx, y1, y2, center_y), ...]
-        """
-        ranges = []
-        step = height / float(slot_count)
+        y_margin = int((1.0 - vertical_crop_ratio) * h / 2.0)
+        y1 = max(0, y_margin)
+        y2 = min(h, h - y_margin)
 
         for i in range(slot_count):
-            raw_y1 = int(round(i * step))
-            raw_y2 = int(round((i + 1) * step)) - 1
+            x1_full = int(round(i * slot_width))
+            x2_full = int(round((i + 1) * slot_width))
 
-            if i == slot_count - 1:
-                raw_y2 = height - 1
+            full_width = max(1, x2_full - x1_full)
+            inner_width = max(1, int(round(full_width * slot_crop_ratio)))
+            x_margin = max(0, (full_width - inner_width) // 2)
 
-            seg_h = max(1, raw_y2 - raw_y1 + 1)
+            x1 = min(w, max(0, x1_full + x_margin))
+            x2 = min(w, max(x1 + 1, x2_full - x_margin))
 
-            inner_y1 = raw_y1 + int(round(seg_h * self.inner_top_ratio))
-            inner_y2 = raw_y1 + int(round(seg_h * self.inner_bottom_ratio)) - 1
+            slot_img = roi[y1:y2, x1:x2].copy()
+            slot_imgs.append((i + 1, slot_img, (x1, y1, x2, y2)))
 
-            inner_y1 = max(raw_y1, min(raw_y2, inner_y1))
-            inner_y2 = max(inner_y1, min(raw_y2, inner_y2))
+        return slot_imgs
 
-            center_y = (raw_y1 + raw_y2) // 2
-            ranges.append((i + 1, inner_y1, inner_y2, center_y))
+    def _calc_slot_ratio(self, slot_img, color_name, hsv_ranges):
+        if slot_img is None or slot_img.size == 0:
+            return 0.0, None
 
-        return ranges
+        hsv = cv2.cvtColor(slot_img, cv2.COLOR_BGR2HSV)
+        mask = self._build_mask(hsv, color_name, hsv_ranges)
+        mask = self._clean_mask(mask)
 
-    def _pick_primary_slot(self, active_slots, slot_ratios):
-        if not active_slots:
-            return None
+        total_pixels = mask.shape[0] * mask.shape[1]
+        if total_pixels <= 0:
+            return 0.0, mask
 
-        best_slot = None
-        best_ratio = -1.0
+        lit_pixels = int(np.count_nonzero(mask))
+        ratio = lit_pixels / float(total_pixels)
+        return ratio, mask
 
-        for s in active_slots:
-            r = slot_ratios.get(s, 0.0)
-            if r > best_ratio:
-                best_ratio = r
-                best_slot = s
+    def _detect_slots_for_color(self, roi, side_name, color_name, stage_config):
+        hsv_ranges = self._get_hsv_ranges(stage_config)
+        thresholds = self._get_color_thresholds(stage_config)
+        slot_count = self._get_slot_count(stage_config)
+        slot_crop_ratio = self._get_slot_crop_ratio(stage_config)
+        vertical_crop_ratio = self._get_vertical_crop_ratio(stage_config)
 
-        return best_slot
-
-    def _slot_to_center_y(self, slot_idx):
-        if slot_idx is None:
-            return None
-        if 1 <= slot_idx <= len(self.turn_slot_centers):
-            return self.turn_slot_centers[slot_idx - 1]
-        return None
-
-    def normalize_slots(self, slots):
-        return tuple(sorted(set(slots)))
-
-    # =========================
-    # 패턴 판단
-    # =========================
-
-    def get_pattern_a_stage(self, slots):
-        """
-        패턴 A:
-          (1,2) -> 0
-          (3,4) -> 1
-          (5,)  -> 2
-          ()    -> 3
-        """
-        slots = self.normalize_slots(slots)
-
-        if slots == (1, 2):
-            return 0
-        if slots == (3, 4):
-            return 1
-        if slots == (5,):
-            return 2
-        if slots == ():
-            return 3
-        return None
-
-    def get_pattern_b_stage(self, slots):
-        """
-        패턴 B:
-          (1,)   -> 0
-          (2,3)  -> 1
-          (4,5)  -> 2
-          ()     -> 3
-        """
-        slots = self.normalize_slots(slots)
-
-        if slots == (1,):
-            return 0
-        if slots == (2, 3):
-            return 1
-        if slots == (4, 5):
-            return 2
-        if slots == ():
-            return 3
-        return None
-
-    def detect_team_pattern(self, slots):
-        """
-        return:
-          ("A", stage) / ("B", stage) / (None, stage_or_None)
-
-        () 는 A/B 둘 다 가능하므로 단독으로는 패턴 확정 불가
-        """
-        slots = self.normalize_slots(slots)
-        a_stage = self.get_pattern_a_stage(slots)
-        b_stage = self.get_pattern_b_stage(slots)
-
-        if slots == ():
-            return (None, 3)
-
-        if a_stage is not None and b_stage is None:
-            return ("A", a_stage)
-
-        if b_stage is not None and a_stage is None:
-            return ("B", b_stage)
-
-        return (None, None)
-
-    def infer_patterns(self, ally_slots, enemy_slots):
-        ally_slots = self.normalize_slots(ally_slots)
-        enemy_slots = self.normalize_slots(enemy_slots)
-
-        ally_pattern, ally_stage = self.detect_team_pattern(ally_slots)
-        enemy_pattern, enemy_stage = self.detect_team_pattern(enemy_slots)
-
-        if ally_pattern == "A" and enemy_pattern is None:
-            enemy_pattern = "B"
-            enemy_stage = self.get_pattern_b_stage(enemy_slots)
-        elif ally_pattern == "B" and enemy_pattern is None:
-            enemy_pattern = "A"
-            enemy_stage = self.get_pattern_a_stage(enemy_slots)
-
-        if enemy_pattern == "A" and ally_pattern is None:
-            ally_pattern = "B"
-            ally_stage = self.get_pattern_b_stage(ally_slots)
-        elif enemy_pattern == "B" and ally_pattern is None:
-            ally_pattern = "A"
-            ally_stage = self.get_pattern_a_stage(ally_slots)
-
-        return {
-            "ally_pattern": ally_pattern,
-            "ally_stage": ally_stage,
-            "enemy_pattern": enemy_pattern,
-            "enemy_stage": enemy_stage,
-        }
-
-    def detect_pick_turn_from_patterns(self, ally_slots, enemy_slots):
-        """
-        규칙:
-        패턴 순서는 항상 B -> A -> B -> A -> B -> A
-
-        따라서
-        - B단계 == A단계     -> 패턴 B 쪽 차례
-        - B단계 == A단계 + 1 -> 패턴 A 쪽 차례
-        """
-        info = self.infer_patterns(ally_slots, enemy_slots)
-
-        ally_pattern = info["ally_pattern"]
-        ally_stage = info["ally_stage"]
-        enemy_pattern = info["enemy_pattern"]
-        enemy_stage = info["enemy_stage"]
-
-        if ally_pattern is None or enemy_pattern is None:
-            return {
-                **info,
-                "pick_turn_team": None,
-                "is_ally_pick_turn": False,
-                "is_enemy_pick_turn": False,
-            }
-
-        if ally_pattern == "A":
-            a_stage = ally_stage
-            b_stage = enemy_stage
-            a_owner = "ally"
-            b_owner = "enemy"
-        else:
-            a_stage = enemy_stage
-            b_stage = ally_stage
-            a_owner = "enemy"
-            b_owner = "ally"
-
-        pick_turn_team = None
-
-        if b_stage == a_stage:
-            pick_turn_team = b_owner
-        elif b_stage == a_stage + 1:
-            pick_turn_team = a_owner
-
-        return {
-            **info,
-            "pick_turn_team": pick_turn_team,
-            "is_ally_pick_turn": pick_turn_team == "ally",
-            "is_enemy_pick_turn": pick_turn_team == "enemy",
-        }
-
-    # =========================
-    # 색 파싱
-    # =========================
-
-    def _parse_hsv_ranges(self, hsv_range_list):
-        if not hsv_range_list:
-            return []
-
-        parsed = []
-        for rng in hsv_range_list:
-            if not isinstance(rng, (list, tuple)) or len(rng) != 2:
-                continue
-            lower, upper = rng
-            parsed.append(
-                (
-                    np.array(lower, dtype=np.uint8),
-                    np.array(upper, dtype=np.uint8),
-                )
-            )
-
-        return parsed
-
-    def _resolve_color_ranges(self, colors, ally_hsv_ranges=None, enemy_hsv_ranges=None):
-        """
-        config의 colors를 받아 HSV 범위 dict로 변환
-        기대 예시:
-        ["blue", "yellow", "red"]
-        """
-        result = {}
-        parsed_ally = self._parse_hsv_ranges(ally_hsv_ranges)
-        parsed_enemy = self._parse_hsv_ranges(enemy_hsv_ranges)
-
-        for c in colors:
-            name = str(c).strip().lower()
-
-            if name == "yellow":
-                if len(parsed_ally) >= 1:
-                    result["yellow"] = [parsed_ally[0]]
-                else:
-                    result["yellow"] = [
-                        (np.array((18, 90, 90), dtype=np.uint8), np.array((40, 255, 255), dtype=np.uint8)),
-                    ]
-            elif name == "blue":
-                if len(parsed_ally) >= 2:
-                    result["blue"] = [parsed_ally[1]]
-                elif len(parsed_ally) == 1:
-                    result["blue"] = [parsed_ally[0]]
-                else:
-                    result["blue"] = [
-                        (np.array((85, 80, 80), dtype=np.uint8), np.array((130, 255, 255), dtype=np.uint8)),
-                    ]
-            elif name == "red":
-                if parsed_enemy:
-                    result["red"] = parsed_enemy
-                else:
-                    result["red"] = [
-                        (np.array((0, 140, 140), dtype=np.uint8), np.array((8, 255, 255), dtype=np.uint8)),
-                        (np.array((172, 140, 140), dtype=np.uint8), np.array((179, 255, 255), dtype=np.uint8)),
-                    ]
-
-        if "blue" not in result:
-            result["blue"] = [
-                (np.array((85, 80, 80), dtype=np.uint8), np.array((130, 255, 255), dtype=np.uint8)),
-            ]
-        if "yellow" not in result:
-            result["yellow"] = [
-                (np.array((18, 90, 90), dtype=np.uint8), np.array((40, 255, 255), dtype=np.uint8)),
-            ]
-        if "red" not in result:
-            result["red"] = [
-                (np.array((0, 140, 140), dtype=np.uint8), np.array((8, 255, 255), dtype=np.uint8)),
-                (np.array((172, 140, 140), dtype=np.uint8), np.array((179, 255, 255), dtype=np.uint8)),
-            ]
-
-        return result
-
-    def _segment_color_presence(self, roi_img, hsv_ranges):
-        """
-        잘린 ROI 이미지를 self.slot_count 칸으로 나눠서
-        각 칸에 색이 threshold 이상 차는지 검사
-        """
-        if roi_img is None or roi_img.size == 0:
-            return {
-                "slot_ranges": [],
-                "active_slots": [],
-                "slot_ratios": {},
-            }
-
-        h, _w = roi_img.shape[:2]
-        hsv = cv2.cvtColor(roi_img, cv2.COLOR_BGR2HSV)
-
-        slot_ranges = self._build_slot_ranges(h, self.slot_count)
-
-        active_slots = []
+        threshold = float(thresholds.get(color_name, 0.08))
+        slots = []
         slot_ratios = {}
 
-        for slot_idx, y1, y2, _center_y in slot_ranges:
-            patch = hsv[y1:y2 + 1, :]
-            if patch.size == 0:
-                slot_ratios[slot_idx] = 0.0
-                continue
+        split_slots = self._split_slots(
+            roi,
+            slot_count=slot_count,
+            slot_crop_ratio=slot_crop_ratio,
+            vertical_crop_ratio=vertical_crop_ratio,
+        )
 
-            merged_mask = None
-            for lower, upper in hsv_ranges:
-                m = cv2.inRange(patch, lower, upper)
-                merged_mask = m if merged_mask is None else cv2.bitwise_or(merged_mask, m)
+        for slot_no, slot_img, rect in split_slots:
+            ratio, mask = self._calc_slot_ratio(slot_img, color_name, hsv_ranges)
+            slot_ratios[slot_no] = ratio
 
-            if merged_mask is None:
-                slot_ratios[slot_idx] = 0.0
-                continue
+            is_active = ratio >= threshold
+            if is_active:
+                slots.append(slot_no)
 
-            merged_mask = self._open_mask(merged_mask)
-            ratio = self._calc_mask_ratio(merged_mask)
-            slot_ratios[slot_idx] = ratio
+            debug_item = {
+                "side": side_name,
+                "color": color_name,
+                "slot": slot_no,
+                "ratio": ratio,
+                "threshold": threshold,
+                "active": is_active,
+                "rect": rect,
+            }
 
-            if ratio >= self.color_ratio_threshold:
-                active_slots.append(slot_idx)
+            if side_name == "ally":
+                self.last_debug["ally_slot_results"].append(debug_item)
+            else:
+                self.last_debug["enemy_slot_results"].append(debug_item)
 
-        return {
-            "slot_ranges": slot_ranges,
-            "active_slots": active_slots,
-            "slot_ratios": slot_ratios,
-        }
+        return slots, slot_ratios
 
-    # =========================
-    # pick_order 계산
-    # =========================
-
-    def _calc_pick_order(self, ally_slot, enemy_slot, pick_turn_team, is_my_turn):
+    def _infer_turn_info(self, blue_slots, yellow_slots, red_slots, ally_active_slots, enemy_active_slots):
         """
-        일단 안전하게:
-        - 내 턴이면 ally_slot 사용
-        - 적 턴이면 enemy_slot 사용
-        - 둘 다 없으면 None
+        현재 구조 기준:
+        - ally 쪽 yellow 있으면 내 차례
+        - yellow 없고 red/blue만 있으면 enemy 또는 team 추정은 제한적
+        - 최소한 ally/enemy 여부는 추정하고, is_my_turn은 yellow 기준으로 확정
         """
-        if is_my_turn:
-            if ally_slot is not None:
-                return ally_slot
-            if self.my_pick_slot is not None:
-                return self.my_pick_slot
+        pick_turn_team = None
+        is_my_turn = False
 
-        if pick_turn_team == "ally":
-            if ally_slot is not None:
-                return ally_slot
-            if self.my_pick_slot is not None:
-                return self.my_pick_slot
+        if yellow_slots:
+            pick_turn_team = "ally"
+            is_my_turn = True
+            return pick_turn_team, is_my_turn
 
-        if pick_turn_team == "enemy" and enemy_slot is not None:
-            return enemy_slot
+        # ally 쪽에 불은 있는데 yellow는 없으면
+        # 우리 팀 차례일 수도 있고 적 차례일 수도 있음.
+        # 현재 파이프라인용 최소 추정:
+        # 적 쪽 red 진행이 더 많거나 같으면 enemy 쪽 진행 중으로 봄.
+        if len(enemy_active_slots) >= len(ally_active_slots) and len(enemy_active_slots) > 0:
+            pick_turn_team = "enemy"
+            is_my_turn = False
+            return pick_turn_team, is_my_turn
 
-        return ally_slot if ally_slot is not None else enemy_slot
+        if len(ally_active_slots) > 0:
+            pick_turn_team = "ally"
+            is_my_turn = False
+            return pick_turn_team, is_my_turn
 
-    # =========================
-    # 디버그
-    # =========================
+        return None, False
 
-    def _save_debug_image(self, name, img):
-        if not self.debug or self.debug_dir is None or img is None:
-            return
-
-        path = self.debug_dir / name
-        cv2.imwrite(str(path), img)
-
-    def _draw_debug_roi(self, roi_img, title, info, side="ally"):
-        if roi_img is None or roi_img.size == 0:
-            return None
-
-        out = roi_img.copy()
-        h, w = out.shape[:2]
-
-        for idx, _y1, _y2, cy in info["slot_ranges"]:
-            cv2.line(out, (0, cy), (w - 1, cy), (180, 180, 180), 1)
-            cv2.putText(
-                out,
-                f"S{idx}",
-                (max(0, w - 45), min(h - 5, cy + 5)),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.45,
-                (255, 255, 255),
-                1,
-                cv2.LINE_AA,
-            )
-
-        color = (255, 255, 255)
-        ratios = info["slot_ratios"]
-
-        for s in info["active_slots"]:
-            for idx, _y1, _y2, cy in info["slot_ranges"]:
-                if idx == s:
-                    if side == "ally_blue":
-                        color = (255, 0, 0)
-                    elif side == "ally_yellow":
-                        color = (0, 255, 255)
-                    elif side == "enemy_red":
-                        color = (0, 0, 255)
-
-                    ratio = ratios.get(s, 0.0)
-                    cv2.line(out, (0, cy), (w - 1, cy), color, 2)
-                    cv2.putText(
-                        out,
-                        f"{title} S{s} r={ratio:.2f}",
-                        (5, max(15, cy - 6)),
-                        cv2.FONT_HERSHEY_SIMPLEX,
-                        0.42,
-                        color,
-                        1,
-                        cv2.LINE_AA,
-                    )
-                    break
-
-        return out
-
-    # =========================
-    # 메인 check
-    # =========================
-
-    def check(self, ally_roi, enemy_roi, colors, stage_config=None):
+    def _build_pick_order(self, ally_active_slots, enemy_active_slots):
         """
-        반환:
-            불 들어온 막대기 번호 set
-            예: {1, 2, 8}
-
-        규칙:
-            아군 1~5
-            적군 6~10
+        단순 진행 순서 정보.
+        현재 화면만으로 완전한 밴픽 로그를 복원하는 건 한계가 있어서
+        활성 슬롯 번호 기준으로 가볍게 정리.
         """
+        order = []
+
+        for slot in ally_active_slots:
+            order.append(("ally", slot))
+
+        for slot in enemy_active_slots:
+            order.append(("enemy", slot))
+
+        order.sort(key=lambda x: x[1])
+        return order
+
+    def check(self, ally_roi, enemy_roi, colors=None, stage_config=None):
+        if stage_config is None:
+            stage_config = {}
+        if colors is None:
+            colors = ["blue", "yellow", "red"]
+
+        self._init_debug()
+        self.last_info = None
+
         if ally_roi is None or enemy_roi is None:
             self.last_info = {}
-            return set()
+            return []
 
-        if stage_config is not None:
-            self.slot_count = stage_config.get("slot_count", self.slot_count)
-            self.my_pick_slot = stage_config.get("my_pick_slot", self.my_pick_slot)
-            self.color_ratio_threshold = stage_config.get("color_ratio_threshold", self.color_ratio_threshold)
-            self.inner_top_ratio = stage_config.get("inner_top_ratio", self.inner_top_ratio)
-            self.inner_bottom_ratio = stage_config.get("inner_bottom_ratio", self.inner_bottom_ratio)
-            ally_hsv_ranges = stage_config.get("ally_hsv_ranges")
-            enemy_hsv_ranges = stage_config.get("enemy_hsv_ranges")
-        else:
-            ally_hsv_ranges = None
-            enemy_hsv_ranges = None
+        blue_slots, blue_slot_ratios = [], {}
+        yellow_slots, yellow_slot_ratios = [], {}
+        red_slots, red_slot_ratios = [], {}
 
-        color_ranges = self._resolve_color_ranges(colors, ally_hsv_ranges, enemy_hsv_ranges)
+        if "blue" in colors:
+            blue_slots, blue_slot_ratios = self._detect_slots_for_color(
+                ally_roi,
+                side_name="ally",
+                color_name="blue",
+                stage_config=stage_config,
+            )
 
-        ally_blue = self._segment_color_presence(
-            ally_roi,
-            color_ranges["blue"],
-        )
+        if "yellow" in colors:
+            yellow_slots, yellow_slot_ratios = self._detect_slots_for_color(
+                ally_roi,
+                side_name="ally",
+                color_name="yellow",
+                stage_config=stage_config,
+            )
 
-        ally_yellow = self._segment_color_presence(
-            ally_roi,
-            color_ranges["yellow"],
-        )
+        if "red" in colors:
+            red_slots, red_slot_ratios = self._detect_slots_for_color(
+                enemy_roi,
+                side_name="enemy",
+                color_name="red",
+                stage_config=stage_config,
+            )
 
-        enemy_red = self._segment_color_presence(
-            enemy_roi,
-            color_ranges["red"],
-        )
-
-        blue_slots = ally_blue["active_slots"]
-        yellow_slots = ally_yellow["active_slots"]
-        red_slots = enemy_red["active_slots"]
-
-        ally_active_slots = sorted(set(blue_slots + yellow_slots))
+        # ally 활성 슬롯은 blue + yellow 합집합
+        ally_active_slots = sorted(set(blue_slots) | set(yellow_slots))
         enemy_active_slots = sorted(set(red_slots))
 
-        pick_info = self.detect_pick_turn_from_patterns(
-            ally_active_slots,
-            enemy_active_slots,
+        pick_turn_team, is_my_turn = self._infer_turn_info(
+            blue_slots=blue_slots,
+            yellow_slots=yellow_slots,
+            red_slots=red_slots,
+            ally_active_slots=ally_active_slots,
+            enemy_active_slots=enemy_active_slots,
         )
 
-        blue_slot = self._pick_primary_slot(blue_slots, ally_blue["slot_ratios"])
-        yellow_slot = self._pick_primary_slot(yellow_slots, ally_yellow["slot_ratios"])
-        enemy_slot = self._pick_primary_slot(red_slots, enemy_red["slot_ratios"])
-
-        is_my_turn = len(yellow_slots) > 0
-        ally_slot = yellow_slot if is_my_turn else blue_slot
-
-        pick_order = self._calc_pick_order(
-            ally_slot=ally_slot,
-            enemy_slot=enemy_slot,
-            pick_turn_team=pick_info["pick_turn_team"],
-            is_my_turn=is_my_turn,
+        pick_order = self._build_pick_order(
+            ally_active_slots=ally_active_slots,
+            enemy_active_slots=enemy_active_slots,
         )
 
         self.last_info = {
-            "blue_y": self._slot_to_center_y(blue_slot),
-            "yellow_y": self._slot_to_center_y(yellow_slot),
-            "red_y": self._slot_to_center_y(enemy_slot),
-
-            "blue_strength": ally_blue["slot_ratios"].get(blue_slot, 0.0) if blue_slot else 0.0,
-            "yellow_strength": ally_yellow["slot_ratios"].get(yellow_slot, 0.0) if yellow_slot else 0.0,
-            "red_strength": enemy_red["slot_ratios"].get(enemy_slot, 0.0) if enemy_slot else 0.0,
-
-            "is_my_turn": is_my_turn,
-            "ally_slot": ally_slot,
-            "enemy_slot": enemy_slot,
-            "turn_slot": ally_slot,
-
             "blue_slots": blue_slots,
             "yellow_slots": yellow_slots,
             "red_slots": red_slots,
-
-            "blue_slot_ratios": ally_blue["slot_ratios"],
-            "yellow_slot_ratios": ally_yellow["slot_ratios"],
-            "red_slot_ratios": enemy_red["slot_ratios"],
-
-            "ally_slot_ranges": ally_blue["slot_ranges"],
-            "enemy_slot_ranges": enemy_red["slot_ranges"],
-
+            "blue_slot_ratios": blue_slot_ratios,
+            "yellow_slot_ratios": yellow_slot_ratios,
+            "red_slot_ratios": red_slot_ratios,
+            "pick_turn_team": pick_turn_team,   # "ally" / "enemy" / None
+            "is_my_turn": is_my_turn,           # True / False
             "ally_active_slots": ally_active_slots,
             "enemy_active_slots": enemy_active_slots,
-
-            "ally_pattern": pick_info["ally_pattern"],
-            "enemy_pattern": pick_info["enemy_pattern"],
-            "ally_stage": pick_info["ally_stage"],
-            "enemy_stage": pick_info["enemy_stage"],
-
-            "pick_turn_team": pick_info["pick_turn_team"],
-            "is_ally_pick_turn": pick_info["is_ally_pick_turn"],
-            "is_enemy_pick_turn": pick_info["is_enemy_pick_turn"],
-
             "pick_order": pick_order,
         }
 
-        if self.debug:
-            self._save_debug_image("ally_roi.png", ally_roi)
-            self._save_debug_image("enemy_roi.png", enemy_roi)
+        self.last_debug["summary"] = self.last_info.copy()
 
-            ally_blue_dbg = self._draw_debug_roi(ally_roi, "BLUE", ally_blue, side="ally_blue")
-            ally_yellow_dbg = self._draw_debug_roi(ally_roi, "YELLOW", ally_yellow, side="ally_yellow")
-            enemy_red_dbg = self._draw_debug_roi(enemy_roi, "RED", enemy_red, side="enemy_red")
+        # StickStage에서 raw_lit_bars 출력용으로 쓸 수 있게 단순 리스트 반환
+        # (slot_index_0_based, color, ratio)
+        raw_lit_bars = []
 
-            self._save_debug_image("ally_blue_debug.png", ally_blue_dbg)
-            self._save_debug_image("ally_yellow_debug.png", ally_yellow_dbg)
-            self._save_debug_image("enemy_red_debug.png", enemy_red_dbg)
+        for slot in blue_slots:
+            raw_lit_bars.append((slot - 1, "blue", blue_slot_ratios.get(slot, 0.0)))
 
-            print("[StickChecker] blue_slots =", blue_slots)
-            print("[StickChecker] yellow_slots =", yellow_slots)
-            print("[StickChecker] red_slots =", red_slots)
-            print("[StickChecker] ally_active_slots =", ally_active_slots)
-            print("[StickChecker] enemy_active_slots =", enemy_active_slots)
-            print("[StickChecker] ally_pattern =", pick_info["ally_pattern"])
-            print("[StickChecker] enemy_pattern =", pick_info["enemy_pattern"])
-            print("[StickChecker] ally_stage =", pick_info["ally_stage"])
-            print("[StickChecker] enemy_stage =", pick_info["enemy_stage"])
-            print("[StickChecker] pick_turn_team =", pick_info["pick_turn_team"])
-            print("[StickChecker] pick_order =", pick_order)
-            print("[StickChecker] is_my_turn =", is_my_turn)
+        for slot in yellow_slots:
+            raw_lit_bars.append((slot - 1, "yellow", yellow_slot_ratios.get(slot, 0.0)))
 
-        lit_bars = set()
+        for slot in red_slots:
+            raw_lit_bars.append((slot - 1, "red", red_slot_ratios.get(slot, 0.0)))
 
-        # 아군: 1~5
-        for slot in ally_active_slots:
-            lit_bars.add(slot)
-
-        # 적군: 6~10
-        for slot in enemy_active_slots:
-            lit_bars.add(slot + 5)
-
-        return lit_bars
+        raw_lit_bars.sort(key=lambda x: (x[0], x[1]))
+        return raw_lit_bars

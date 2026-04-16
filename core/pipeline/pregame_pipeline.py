@@ -10,7 +10,7 @@ from core.pipeline.UIStage import UIStage
 from core.vision.roi_extractor import ROIExtractor
 from core.vision.stick_checker import StickChecker
 from core.vision.text_template_checker import TextTemplateChecker
-from core.vision.champion_image_detector import ChampionImageDetector
+from core.vision.ban_champion_image_detector import BanChampionImageDetector
 
 
 class PregamePipeline:
@@ -25,7 +25,7 @@ class PregamePipeline:
         self.roi_extractor = ROIExtractor()
         self.text_checker = TextTemplateChecker()
         self.stick_checker = StickChecker()
-        self.champion_detector = ChampionImageDetector()
+        self.BanChampionImageDetector = BanChampionImageDetector()
 
         self.text_stage = TextStage(
             self.app_state,
@@ -50,13 +50,13 @@ class PregamePipeline:
             self.app_state,
             self.screen_source,
             self.roi_extractor,
-            self.champion_detector
+            self.BanChampionImageDetector
         )
         self.pick_champion_stage = PickChampionStage(
             self.app_state,
             self.screen_source,
             self.roi_extractor,
-            self.champion_detector
+            self.BanChampionImageDetector
         )
 
         self.ui_stage = UIStage(

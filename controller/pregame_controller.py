@@ -47,13 +47,28 @@ class PregameController:
 
         self.debug_dir.mkdir(parents=True, exist_ok=True)
 
-        structure = {
-            "stage_0": ["TextStage"],
-            "stage_1": ["TextStage", "BanChampionStage"],
-            "stage_2": ["TextStage", "BanChampionStage", "StickStage"],
-        }
-
         subfolders = ["original", "roi", "processed", "result"]
+
+        # 올려주신 기존 폴더 구조 기준
+        structure = {
+            "stage_0": [
+                "TextStage",
+            ],
+            "stage_1": [
+                "TextStage",
+            ],
+            "stage_2": [
+                "TextStage",
+                "BanChampionStage",
+            ],
+            "stage_3": [
+                "TextStage",
+                "BanChampionStage",
+                "StickStage",
+                "PikChampionStage",
+                "PikChampionStage/BanChampionStage",
+            ],
+        }
 
         for stage_name, stage_classes in structure.items():
             for stage_class in stage_classes:
@@ -67,7 +82,6 @@ class PregameController:
         self._reset_debug_dir()
 
         self.GPTbrowser.start_and_connect()
-
         self.screen_source.start()
 
         result = self.pipeline.run()

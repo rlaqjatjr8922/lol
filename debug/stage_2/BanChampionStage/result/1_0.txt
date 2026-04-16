@@ -1,1 +1,4 @@
-unknown
+roi_index: 0
+detected_name: caitlyn
+best_name: caitlyn
+best_score: 0.9282569064860692

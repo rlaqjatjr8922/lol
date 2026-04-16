@@ -1,1 +1,4 @@
-unknown
+roi_index: 1
+detected_name: darius
+best_name: darius
+best_score: 0.8374838096012515

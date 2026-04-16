@@ -80,11 +80,11 @@ class TextStage:
 
         cleaned_name = os.path.basename(matched_path)
         cleaned_name = os.path.splitext(cleaned_name)[0]
+        if self.app_state.stage == 0:
 
-        self.app_state.detected_text = cleaned_name
+            self.app_state.detected_text = cleaned_name
 
         print(f"[TextStage] 조건 만족: {cleaned_name}")
-
         self.app_state.next_stage()
 
         print(f"[TextStage] 다음 stage = {self.app_state.stage}")

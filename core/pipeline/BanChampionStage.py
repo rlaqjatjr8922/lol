@@ -20,10 +20,17 @@ class BanChampionStage:
 
         original_dir = debug_dir / "original"
         roi_dir = debug_dir / "roi"
-        processed_dir = debug_dir / "processed"
         result_dir = debug_dir / "result"
 
+        original_dir.mkdir(parents=True, exist_ok=True)
+        roi_dir.mkdir(parents=True, exist_ok=True)
+        result_dir.mkdir(parents=True, exist_ok=True)
+
         frame = self.screen_source.capture()
+        if frame is None:
+            print("[BanChampionStage] frame is None")
+            return False
+
         cv2.imwrite(str(original_dir / f"{call_idx}_0.png"), frame)
 
         pick_slots = stage_config["pick_slots"]
@@ -33,52 +40,68 @@ class BanChampionStage:
             roi = self.roi_extractor.extract(frame, slot)
             roi_list.append(roi)
 
-        current_champions = []
+        roi_results = []
 
         for roi_idx, roi in enumerate(roi_list):
             if roi is not None:
                 cv2.imwrite(str(roi_dir / f"{call_idx}_{roi_idx}.png"), roi)
+            else:
+                print(f"[BanChampionStage] roi is None: index={roi_idx}")
 
-            champ_name = self.champion_detector.detect(roi, stage_config)
+            champ_name, debug_images = self.champion_detector.detect(roi, stage_config)
 
-            last_debug = self.champion_detector.last_debug
+            if debug_images is None:
+                debug_images = {}
 
-            processed_idx = 0
-            if last_debug is not None:
-                roi_steps = last_debug.get("roi_steps", [])
-                matched_template_steps = last_debug.get("matched_template_steps", [])
+            score = debug_images.get("best_score", -1.0)
+            if score is None:
+                score = -1.0
 
-                for _, img in roi_steps:
-                    if img is not None:
-                        cv2.imwrite(
-                            str(processed_dir / f"{call_idx}_{roi_idx}_{processed_idx}.png"),
-                            img
-                        )
-                        processed_idx += 1
+            print(
+                f"[BanChampionStage] roi_idx={roi_idx}, "
+                f"champ={champ_name}, "
+                f"best_name={debug_images.get('best_name')}, "
+                f"score={score}"
+            )
 
-                for _, img in matched_template_steps:
-                    if img is not None:
-                        cv2.imwrite(
-                            str(processed_dir / f"{call_idx}_{roi_idx}_{processed_idx}.png"),
-                            img
-                        )
-                        processed_idx += 1
+            save_order = [
+                "roi_resized",
+                "roi_gray_big",
+                "roi_gray_eq_big",
+                "roi_binary_big",
+                "best_template_resized",
+                "best_template_gray_big",
+                "best_template_gray_eq_big",
+                "best_template_binary_big",
+            ]
 
-            result_text = "None" if champ_name is None else str(champ_name)
+            save_idx = 0
+            for key in save_order:
+                img = debug_images.get(key)
+                if img is not None:
+                    cv2.imwrite(str(result_dir / f"{call_idx}_{roi_idx}_{save_idx}.png"), img)
+                    save_idx += 1
+
             with open(result_dir / f"{call_idx}_{roi_idx}.txt", "w", encoding="utf-8") as f:
-                f.write(result_text)
+                f.write(f"roi_index: {roi_idx}\n")
+                f.write(f"detected_name: {champ_name}\n")
+                f.write(f"best_name: {debug_images.get('best_name')}\n")
+                f.write(f"best_score: {score}\n")
 
-            current_champions.append(champ_name)
+            roi_results.append(champ_name)
 
-        print(f"[BanChampionStage] 현재 챔피언 = {current_champions}")
+        print(f"[BanChampionStage] ROI별 결과 = {roi_results}")
 
         self.app_state.ban_champion_stage_call_count += 1
 
-        if current_champions != self.app_state.ban_champions:
+        # ROI별 결과 그대로 저장
+        final_champions = roi_results
+
+        if final_champions != self.app_state.ban_champions:
             print("[BanChampionStage] 변화 감지됨")
             print(f"[BanChampionStage] 이전 = {self.app_state.ban_champions}")
 
-            self.app_state.ban_champions = current_champions
+            self.app_state.ban_champions = final_champions
             return True
 
         print("[BanChampionStage] 변화 없음")
