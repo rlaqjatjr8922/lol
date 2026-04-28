@@ -1,4 +1,0 @@
-roi_index: 4
-detected_name: kennen
-best_name: kennen
-best_score: 0.8605740340004184

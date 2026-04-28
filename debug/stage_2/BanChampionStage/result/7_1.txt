@@ -1,4 +1,0 @@
-roi_index: 1
-detected_name: ryze
-best_name: ryze
-best_score: 0.5916517487565025

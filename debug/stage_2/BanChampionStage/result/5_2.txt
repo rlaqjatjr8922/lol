@@ -1,4 +1,0 @@
-roi_index: 2
-detected_name: corki
-best_name: corki
-best_score: 0.9357742791769215

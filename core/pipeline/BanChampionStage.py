@@ -3,11 +3,11 @@ from pathlib import Path
 
 
 class BanChampionStage:
-    def __init__(self, app_state, screen_source, roi_extractor, champion_detector):
+    def __init__(self, app_state, screen_source, roi_extractor, Banchampion_detector):
         self.app_state = app_state
         self.screen_source = screen_source
         self.roi_extractor = roi_extractor
-        self.champion_detector = champion_detector
+        self.Banchampion_detector = Banchampion_detector
 
     def run(self, stage_config):
         print("[BanChampionStage] 시작")
@@ -33,22 +33,24 @@ class BanChampionStage:
 
         cv2.imwrite(str(original_dir / f"{call_idx}_0.png"), frame)
 
-        pick_slots = stage_config["pick_slots"]
-
-        roi_list = []
-        for slot in pick_slots:
-            roi = self.roi_extractor.extract(frame, slot)
-            roi_list.append(roi)
+        pick_slots = stage_config.get("pick_slots", [])
 
         roi_results = []
 
-        for roi_idx, roi in enumerate(roi_list):
+        for roi_idx, slot in enumerate(pick_slots):
+            roi = self.roi_extractor.extract(frame, slot)
+
             if roi is not None:
                 cv2.imwrite(str(roi_dir / f"{call_idx}_{roi_idx}.png"), roi)
             else:
                 print(f"[BanChampionStage] roi is None: index={roi_idx}")
+                roi_results.append(None)
+                continue
 
-            champ_name, debug_images = self.champion_detector.detect(roi, stage_config)
+            champ_name, debug_images = self.Banchampion_detector.detect(
+                roi,
+                stage_config
+            )
 
             if debug_images is None:
                 debug_images = {}
@@ -79,7 +81,10 @@ class BanChampionStage:
             for key in save_order:
                 img = debug_images.get(key)
                 if img is not None:
-                    cv2.imwrite(str(result_dir / f"{call_idx}_{roi_idx}_{save_idx}.png"), img)
+                    cv2.imwrite(
+                        str(result_dir / f"{call_idx}_{roi_idx}_{save_idx}.png"),
+                        img
+                    )
                     save_idx += 1
 
             with open(result_dir / f"{call_idx}_{roi_idx}.txt", "w", encoding="utf-8") as f:
@@ -94,7 +99,6 @@ class BanChampionStage:
 
         self.app_state.ban_champion_stage_call_count += 1
 
-        # ROI별 결과 그대로 저장
         final_champions = roi_results
 
         if final_champions != self.app_state.ban_champions:
