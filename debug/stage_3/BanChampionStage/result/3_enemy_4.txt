@@ -1,0 +1,6 @@
+team: enemy
+roi_index: 9
+local_index: 4
+detected_name: volibear
+best_name: volibear
+best_score: 0.4852714309944325

@@ -41,6 +41,8 @@ def run_ui(app_state):
     controller_running = False
     controller_error = None
 
+    last_stage = app_state.stage
+
     font = pygame.font.SysFont("malgungothic", 22, bold=True)
     small_font = pygame.font.SysFont("malgungothic", 16)
 
@@ -55,6 +57,7 @@ def run_ui(app_state):
 
         def worker():
             nonlocal controller_running, controller_error
+
             try:
                 controller = PregameController(app_state)
                 controller.run()
@@ -67,7 +70,8 @@ def run_ui(app_state):
         controller_thread.start()
 
     def draw_status_overlay():
-        status_rect = pygame.Rect(16, 16, 420, 150)
+        status_rect = pygame.Rect(16, 16, 430, 170)
+
         pygame.draw.rect(screen, (245, 245, 245), status_rect, border_radius=10)
         pygame.draw.rect(screen, (0, 0, 0), status_rect, 2, border_radius=10)
 
@@ -75,18 +79,24 @@ def run_ui(app_state):
             f"controller: {'RUNNING' if controller_running else 'STOP'}",
             f"stage: {app_state.stage}",
             f"gpt_stage: {app_state.gpt_stage}",
+            f"ban: {app_state.ban_champions}",
             f"my_turn: {app_state.is_my_turn}",
             f"pick_order: {app_state.pick_order}",
         ]
 
         y = status_rect.y + 10
+
         for line in lines:
             text = small_font.render(line, True, (0, 0, 0))
             screen.blit(text, (status_rect.x + 12, y))
             y += 24
 
         if controller_error:
-            err = small_font.render(f"ERROR: {controller_error[:40]}", True, (180, 0, 0))
+            err = small_font.render(
+                f"ERROR: {controller_error[:45]}",
+                True,
+                (180, 0, 0),
+            )
             screen.blit(err, (status_rect.x + 12, y))
 
     def draw_start_button():
@@ -111,6 +121,22 @@ def run_ui(app_state):
     running = True
 
     while running:
+        current_stage = app_state.stage
+
+        if current_stage != last_stage:
+            blue_ui.sync_stage_layout(current_stage)
+            last_stage = current_stage
+
+        ui_state.current_stage = current_stage
+
+        blue_state.ban_champions = app_state.ban_champions
+        blue_state.pick_champions = app_state.pick_champions
+        blue_state.is_my_turn = app_state.is_my_turn
+        blue_state.pick_order = app_state.pick_order
+
+        green_ui.gpt_stage = app_state.gpt_stage
+        green_ui.gpt_parsed = app_state.gpt_parsed
+
         red_rect, blue_rect, stage_bar_rect, green_rect = build_layout(
             SCREEN_WIDTH,
             SCREEN_HEIGHT,
@@ -119,14 +145,11 @@ def run_ui(app_state):
             STAGE_BAR_HEIGHT,
         )
 
-        current_stage = app_state.stage
-        ui_state.current_stage = current_stage
+        start_button_rect = pygame.Rect(460, 24, 160, 48)
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
-
-            start_button_rect = pygame.Rect(460, 24, 160, 48)
 
             if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                 if start_button_rect.collidepoint(event.pos):
@@ -146,6 +169,7 @@ def run_ui(app_state):
                         app_state.stage = idx
                         ui_state.current_stage = idx
                         blue_ui.sync_stage_layout(idx)
+                        last_stage = idx
 
             blue_ui.handle_event(event, blue_rect)
             green_ui.handle_event(event, green_rect)

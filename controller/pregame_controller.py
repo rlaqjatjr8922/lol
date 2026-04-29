@@ -44,12 +44,13 @@ class PregameController:
         with open(path, "r", encoding="utf-8") as f:
             return json.load(f)
 
-    def _remove_readonly(self, func, path, exc):
+    # 🔥 수정된 부분
+    def _remove_readonly(self, func, path, exc_info):
         try:
             os.chmod(path, stat.S_IWRITE)
             func(path)
         except Exception:
-            raise exc
+            pass
 
     def _safe_rmtree(self, path):
         if not path.exists():
@@ -57,13 +58,13 @@ class PregameController:
 
         for i in range(3):
             try:
-                shutil.rmtree(path, onexc=self._remove_readonly)
+                shutil.rmtree(path, onerror=self._remove_readonly)
                 return
             except PermissionError:
                 print(f"[debug 삭제 재시도] {i + 1}/3")
                 time.sleep(0.5)
 
-        shutil.rmtree(path, onexc=self._remove_readonly)
+        shutil.rmtree(path, onerror=self._remove_readonly)
 
     def _reset_debug_dir(self):
         self._safe_rmtree(self.debug_dir)
@@ -73,16 +74,9 @@ class PregameController:
         subfolders = ["original", "roi", "processed", "result"]
 
         structure = {
-            "stage_0": [
-                "TextStage",
-            ],
-            "stage_1": [
-                "TextStage",
-            ],
-            "stage_2": [
-                "TextStage",
-                "BanChampionStage",
-            ],
+            "stage_0": ["TextStage"],
+            "stage_1": ["TextStage"],
+            "stage_2": ["TextStage", "BanChampionStage"],
             "stage_3": [
                 "TextStage",
                 "BanChampionStage",

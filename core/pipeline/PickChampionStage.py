@@ -224,6 +224,7 @@ class PickChampionStage:
             print(f"[PickChampionStage] 이전 = {self.app_state.pick_champions}")
 
             self.app_state.pick_champions = pick_champions
+            self.app_state.gpt_stage = 0
             return True
 
         print("[PickChampionStage] 변화 없음")

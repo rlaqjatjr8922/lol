@@ -1,0 +1,6 @@
+team: enemy
+roi_index: 8
+local_index: 3
+detected_name: sona
+best_name: sona
+best_score: 0.4334475737535688

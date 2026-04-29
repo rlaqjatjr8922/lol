@@ -1,0 +1,6 @@
+team: ally
+roi_index: 3
+local_index: 3
+detected_name: evelynn
+best_name: evelynn
+best_score: 0.8770472413326686

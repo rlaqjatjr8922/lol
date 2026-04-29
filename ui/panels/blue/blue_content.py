@@ -15,6 +15,56 @@ def draw_blue_content(surface, area_w, area_h, stage, state):
     draw_progress = ease_in_out(state.progress) if state.is_animating else state.progress
     highlight_big_count = 2 if stage == 3 else 0
 
-    draw_team_block(surface=surface, team_x=left_x, team_y=0, team_w=left_team_w, team_h=area_h, ap_ratio=state.left_ap_ratio, reverse_top=False, progress=draw_progress, is_animating=state.is_animating, mode=state.mode, highlight_big_count=highlight_big_count)
-    draw_team_block(surface=surface, team_x=right_x, team_y=0, team_w=right_team_w, team_h=area_h, ap_ratio=state.right_ap_ratio, reverse_top=True, progress=draw_progress, is_animating=state.is_animating, mode=state.mode, highlight_big_count=highlight_big_count)
-    draw_center_pentagon(surface=surface, center_x=center_x, y=0, center_w=center_w, h=area_h, ally_stats=state.ally_stats, enemy_stats=state.enemy_stats)
+    # 🔥 ban_champions = {"ally": [...], "enemy": [...]}
+    banned = getattr(state, "ban_champions", {})
+
+    # 안전 처리
+    if not isinstance(banned, dict):
+        left_bans = []
+        right_bans = []
+    else:
+        left_bans = banned.get("ally", []) or []
+        right_bans = banned.get("enemy", []) or []
+
+    # 🔵 왼쪽 (아군 밴)
+    draw_team_block(
+        surface=surface,
+        team_x=left_x,
+        team_y=0,
+        team_w=left_team_w,
+        team_h=area_h,
+        ap_ratio=state.left_ap_ratio,
+        reverse_top=False,
+        progress=draw_progress,
+        is_animating=state.is_animating,
+        mode=state.mode,
+        highlight_big_count=highlight_big_count,
+        small_champions=left_bans,
+    )
+
+    # 🔴 오른쪽 (적군 밴)
+    draw_team_block(
+        surface=surface,
+        team_x=right_x,
+        team_y=0,
+        team_w=right_team_w,
+        team_h=area_h,
+        ap_ratio=state.right_ap_ratio,
+        reverse_top=True,
+        progress=draw_progress,
+        is_animating=state.is_animating,
+        mode=state.mode,
+        highlight_big_count=highlight_big_count,
+        small_champions=right_bans,
+    )
+
+    # 중앙 그래프
+    draw_center_pentagon(
+        surface=surface,
+        center_x=center_x,
+        y=0,
+        center_w=center_w,
+        h=area_h,
+        ally_stats=state.ally_stats,
+        enemy_stats=state.enemy_stats,
+    )

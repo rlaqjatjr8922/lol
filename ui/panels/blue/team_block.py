@@ -1,4 +1,33 @@
 import pygame
+from pathlib import Path
+
+
+BASE_DIR = Path(__file__).resolve().parents[3]
+CHAMPION_DIR = BASE_DIR / "assets" / "champions"
+_image_cache = {}
+
+
+def norm_champion_name(name):
+    return str(name).strip().lower().replace(" ", "").replace("'", "")
+
+
+def load_champion_image(name, size):
+    key = (str(name), size)
+
+    if key in _image_cache:
+        return _image_cache[key]
+
+    path = CHAMPION_DIR / f"{norm_champion_name(name)}.png"
+
+    if not path.exists():
+        _image_cache[key] = None
+        return None
+
+    img = pygame.image.load(str(path)).convert_alpha()
+    img = pygame.transform.smoothscale(img, size)
+
+    _image_cache[key] = img
+    return img
 
 
 def draw_team_block(
@@ -13,10 +42,10 @@ def draw_team_block(
     is_animating,
     mode,
     highlight_big_count=0,
+    small_champions=None,
 ):
     top_row_h = int(team_h * 0.20)
     square_zone_h = int(team_h * 0.55)
-    bottom_circle_h = team_h - top_row_h - square_zone_h
 
     small_border_color = (255, 60, 60)
     big_border_color = (255, 230, 120)
@@ -36,6 +65,7 @@ def draw_team_block(
     mini_total_w = mini_size * 5 + mini_gap * 4
     available_w = team_w - row_side_pad * 2
     bar_w = available_w - mini_total_w - bar_gap
+
     if bar_w < 70:
         bar_w = 70
 
@@ -49,18 +79,20 @@ def draw_team_block(
     if not reverse_top:
         original_small_start_x = start_x
     else:
-        original_small_start_x = start_x + bar_w + bar_gap
+        original_small_start_x = team_x + team_w - row_side_pad - mini_total_w
 
     original_big_total_w = square_size * 5 + square_gap * 4
     original_big_start_x = center_x - original_big_total_w / 2
 
     original_small_y = team_y + top_row_h // 2 - mini_size // 2
     original_big_y = square_y + (square_zone_h - square_size) // 2
+
     original_small_size = mini_size
     original_big_size = square_size
 
     swapped_small_y = original_big_y
     swapped_big_y = original_small_y
+
     swapped_small_size = square_size
     swapped_big_size = mini_size
 
@@ -72,6 +104,7 @@ def draw_team_block(
             big_size = lerp(original_big_size, swapped_big_size, progress)
 
             small_total_w = small_size * 5 + mini_gap * 4
+
             small_start_x = lerp(
                 original_small_start_x,
                 center_x - small_total_w / 2,
@@ -83,7 +116,6 @@ def draw_team_block(
                 original_small_start_x,
                 progress,
             )
-
         else:
             small_y = lerp(swapped_small_y, original_small_y, progress)
             big_y = lerp(swapped_big_y, original_big_y, progress)
@@ -104,7 +136,6 @@ def draw_team_block(
                 original_big_start_x,
                 progress,
             )
-
     else:
         if mode == "original":
             small_y = original_small_y
@@ -134,6 +165,9 @@ def draw_team_block(
         bar_h=bar_h,
         ap_ratio=ap_ratio,
         reverse_top=reverse_top,
+        team_x=team_x,
+        team_w=team_w,
+        row_side_pad=row_side_pad,
     )
 
     draw_big_group(
@@ -155,6 +189,7 @@ def draw_team_block(
         gap=mini_gap,
         border_color=small_border_color,
         fill_color=empty_fill_color,
+        champions=small_champions,
     )
 
     draw_bottom_circles(
@@ -181,13 +216,19 @@ def draw_top_bar(
     bar_h,
     ap_ratio,
     reverse_top,
+    team_x=None,
+    team_w=None,
+    row_side_pad=None,
 ):
     mini_total_w = mini_size * 5 + mini_gap * 4
 
     if not reverse_top:
         bar_x = start_x + mini_total_w + bar_gap
     else:
-        bar_x = start_x
+        if team_x is not None and team_w is not None and row_side_pad is not None:
+            bar_x = team_x + row_side_pad
+        else:
+            bar_x = start_x
 
     bar_rect = pygame.Rect(
         int(bar_x),
@@ -195,18 +236,46 @@ def draw_top_bar(
         int(bar_w),
         int(bar_h),
     )
+
     draw_ap_ad_bar(surface, bar_rect, ap_ratio)
 
 
-def draw_small_group(surface, start_x, y, size, gap, border_color, fill_color):
+def draw_small_group(
+    surface,
+    start_x,
+    y,
+    size,
+    gap,
+    border_color,
+    fill_color,
+    champions=None,
+):
+    champions = champions or []
+
     for i in range(5):
         x = start_x + i * (size + gap)
         rect = pygame.Rect(int(x), int(y), int(size), int(size))
+
         pygame.draw.rect(surface, fill_color, rect)
+
+        if i < len(champions):
+            img = load_champion_image(champions[i], (int(size), int(size)))
+            if img:
+                surface.blit(img, rect.topleft)
+
         pygame.draw.rect(surface, border_color, rect, 2)
 
 
-def draw_big_group(surface, start_x, y, size, gap, border_color, fill_color, highlight_count=0):
+def draw_big_group(
+    surface,
+    start_x,
+    y,
+    size,
+    gap,
+    border_color,
+    fill_color,
+    highlight_count=0,
+):
     for i in range(5):
         x = start_x + i * (size + gap)
         rect = pygame.Rect(int(x), int(y), int(size), int(size))
@@ -231,13 +300,12 @@ def draw_glow_border(surface, rect):
 
 def draw_bottom_circles(surface, start_x, y, size, gap):
     radius = max(8, min(size // 7, size // 5))
-
-    # 큰 네모 실제 바닥에 딱 붙게
     circle_center_y = y + size - radius // 2
 
     for i in range(5):
         cx = start_x + size // 2 + i * (size + gap)
         cy = circle_center_y
+
         pygame.draw.circle(surface, (235, 235, 235), (int(cx), int(cy)), radius)
         pygame.draw.circle(surface, (0, 0, 0), (int(cx), int(cy)), radius, 2)
 
@@ -252,10 +320,18 @@ def draw_ap_ad_bar(surface, rect, ap_ratio):
     ad_w = rect.width - ap_w
 
     if ap_w > 0:
-        pygame.draw.rect(surface, (100, 140, 255), pygame.Rect(rect.x, rect.y, ap_w, rect.height))
+        pygame.draw.rect(
+            surface,
+            (100, 140, 255),
+            pygame.Rect(rect.x, rect.y, ap_w, rect.height),
+        )
 
     if ad_w > 0:
-        pygame.draw.rect(surface, (255, 110, 70), pygame.Rect(rect.x + ap_w, rect.y, ad_w, rect.height))
+        pygame.draw.rect(
+            surface,
+            (255, 110, 70),
+            pygame.Rect(rect.x + ap_w, rect.y, ad_w, rect.height),
+        )
 
     if 0 < ap_w < rect.width:
         pygame.draw.line(
@@ -272,8 +348,12 @@ def draw_ap_ad_bar(surface, rect, ap_ratio):
     ap_text = font.render("AP", True, (255, 255, 255))
     ad_text = font.render("AD", True, (255, 255, 255))
 
-    ap_text_rect = ap_text.get_rect(center=(rect.x + max(ap_w // 2, 12), rect.centery))
-    ad_text_rect = ad_text.get_rect(center=(rect.x + ap_w + max(ad_w // 2, 12), rect.centery))
+    ap_text_rect = ap_text.get_rect(
+        center=(rect.x + max(ap_w // 2, 12), rect.centery)
+    )
+    ad_text_rect = ad_text.get_rect(
+        center=(rect.x + ap_w + max(ad_w // 2, 12), rect.centery)
+    )
 
     if ap_w >= ap_text_rect.width + 8:
         surface.blit(ap_text, ap_text_rect)

@@ -3,9 +3,13 @@ class AppState:
         # 현재 단계
         self.stage = 0
         self.gpt_stage = 0
+        self.previous_stage=0
 
         # 결과 데이터
-        self.ban_champions = []
+        self.ban_champions = {
+        "ally": [],
+        "enemy": []
+        }
         self.detected_text = None
 
         self.gpt_results = None
@@ -41,3 +45,4 @@ class AppState:
         self.pick_champion_stage_call_count = 0
         self.stick_stage_count = 0
         self.gpt_stage = 0
+        self.previous_stage=0

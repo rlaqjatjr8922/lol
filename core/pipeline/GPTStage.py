@@ -92,8 +92,8 @@ class GPTStage:
 
             self.app_state.gpt_results = raw
             self.app_state.gpt_parsed = self._parse(raw)
+            print(f"[GPTStage] 파싱 결과: {raw}=> {self.app_state.gpt_parsed}")
 
-            self.app_state.gpt_stage = 1
             return True
 
         return False
