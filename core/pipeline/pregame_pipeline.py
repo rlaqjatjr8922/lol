@@ -11,6 +11,7 @@ from core.vision.roi_extractor import ROIExtractor
 from core.vision.stick_checker import StickChecker
 from core.vision.text_template_checker import TextTemplateChecker
 from core.vision.ban_champion_image_detector import BanChampionImageDetector
+from core.vision.pick_champion_image_detector import PickChampionImageDetector
 
 
 class PregamePipeline:
@@ -26,6 +27,7 @@ class PregamePipeline:
         self.text_checker = TextTemplateChecker()
         self.stick_checker = StickChecker()
         self.BanChampionImageDetector = BanChampionImageDetector()
+        self.PickChampionImageDetector = PickChampionImageDetector()
 
         self.text_stage = TextStage(
             self.app_state,
@@ -56,7 +58,7 @@ class PregamePipeline:
             self.app_state,
             self.screen_source,
             self.roi_extractor,
-            self.BanChampionImageDetector
+            self.PickChampionImageDetector
         )
 
         self.ui_stage = UIStage(
@@ -111,7 +113,7 @@ class PregamePipeline:
             elif current_stage == 4:
                 print("[PregamePipeline] GPTStage 3 시도")
 
-                self.gpt_stage.run("3")
+
                 print("[PregamePipeline] 완료")
                 return True
 

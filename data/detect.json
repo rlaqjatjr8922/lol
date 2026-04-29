@@ -39,7 +39,7 @@
       "template_dir": "assets/champions",
       "threshold": 0.90
     },
-    "pik_champion1": {
+    "pick_champion1": {
       "ally_picks": [
   [0.0850, 0.1376, 0.0479, 0.1037],
   [0.0850, 0.2730, 0.0479, 0.1037],
