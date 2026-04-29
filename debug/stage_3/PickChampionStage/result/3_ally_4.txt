@@ -1,0 +1,13 @@
+team: ally
+slot_index: 4
+slot_number: 5
+detected_name: Master Yi
+best_name: Master Yi
+best_score: 0.6160253867431829
+
+top_candidates:
+{'name': 'Master Yi', 'gray_score': 0.673865795135498, 'gray_eq_score': 0.662529706954956, 'hist_score': 0.2867735609426005, 'absdiff_score': 0.8270582278050109, 'final_score': 0.6160253867431829}
+{'name': 'vladimir', 'gray_score': 0.527104377746582, 'gray_eq_score': 0.5813443660736084, 'hist_score': 0.28661459707936293, 'absdiff_score': 0.7894327001633987, 'final_score': 0.5346276664737686}
+{'name': "Vel'Koz", 'gray_score': 0.5671792030334473, 'gray_eq_score': 0.6270440220832825, 'hist_score': 0.002236181334806676, 'absdiff_score': 0.8021560968137255, 'final_score': 0.5073965784757114}
+{'name': 'diana', 'gray_score': 0.46929270029067993, 'gray_eq_score': 0.4913329780101776, 'hist_score': 0.22406893872359862, 'absdiff_score': 0.7733213337418301, 'final_score': 0.4724643263107855}
+{'name': 'jinx', 'gray_score': 0.47944581508636475, 'gray_eq_score': 0.45469576120376587, 'hist_score': 0.030433959567543977, 'absdiff_score': 0.7650637425108933, 'final_score': 0.42506111693150017}

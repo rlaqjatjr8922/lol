@@ -1,0 +1,13 @@
+team: enemy
+slot_index: 2
+slot_number: 3
+detected_name: jhin
+best_name: jhin
+best_score: 0.3632930885803227
+
+top_candidates:
+{'name': 'jhin', 'gray_score': 0.24558448791503906, 'gray_eq_score': 0.3364216089248657, 'hist_score': 0.32992929075695104, 'absdiff_score': 0.736174513208061, 'final_score': 0.3632930885803227}
+{'name': "Kog'Maw", 'gray_score': 0.3486066460609436, 'gray_eq_score': 0.28144481778144836, 'hist_score': 0.03858181285862292, 'absdiff_score': 0.7280007489106755, 'final_score': 0.32336224636409067}
+{'name': 'ahri', 'gray_score': 0.25521519780158997, 'gray_eq_score': 0.3056974411010742, 'hist_score': 0.00446182417179956, 'absdiff_score': 0.7206444035947712, 'final_score': 0.29002357693445435}
+{'name': 'garen_1', 'gray_score': 0.2272312492132187, 'gray_eq_score': 0.28866079449653625, 'hist_score': 0.060945948600102356, 'absdiff_score': 0.7286994485294118, 'final_score': 0.28762328257301967}
+{'name': 'nidalee', 'gray_score': 0.24860399961471558, 'gray_eq_score': 0.25998786091804504, 'hist_score': 0.06143314222222002, 'absdiff_score': 0.725822950708061, 'final_score': 0.2861678291912171}

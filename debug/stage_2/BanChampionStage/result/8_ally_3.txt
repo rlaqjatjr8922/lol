@@ -1,0 +1,6 @@
+team: ally
+roi_index: 3
+local_index: 3
+detected_name: yuumi
+best_name: yuumi
+best_score: 0.35179791254501874

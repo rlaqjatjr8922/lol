@@ -1,0 +1,6 @@
+team: ally
+roi_index: 1
+local_index: 1
+detected_name: samira_2
+best_name: samira_2
+best_score: 0.3776356899017093

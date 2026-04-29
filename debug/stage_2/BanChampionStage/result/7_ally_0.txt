@@ -1,0 +1,6 @@
+team: ally
+roi_index: 0
+local_index: 0
+detected_name: blitzcrank
+best_name: blitzcrank
+best_score: 0.39130626507730304

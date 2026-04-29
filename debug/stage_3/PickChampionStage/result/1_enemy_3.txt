@@ -1,0 +1,13 @@
+team: enemy
+slot_index: 3
+slot_number: 4
+detected_name: kaisa_2
+best_name: kaisa_2
+best_score: 0.3572568537564507
+
+top_candidates:
+{'name': 'kaisa_2', 'gray_score': 0.3663696050643921, 'gray_eq_score': 0.40137121081352234, 'hist_score': -0.024033135406108012, 'absdiff_score': 0.7561517054738562, 'final_score': 0.3572568537564507}
+{'name': 'fiora', 'gray_score': 0.3225189745426178, 'gray_eq_score': 0.2849433422088623, 'hist_score': 0.035455251830980625, 'absdiff_score': 0.7382774203431373, 'final_score': 0.3161973071702416}
+{'name': 'jhin', 'gray_score': 0.14780250191688538, 'gray_eq_score': 0.27705687284469604, 'hist_score': 0.3608507521497972, 'absdiff_score': 0.7258399714052287, 'final_score': 0.31589408366506244}
+{'name': 'nautilus', 'gray_score': 0.4486393928527832, 'gray_eq_score': 0.17420808970928192, 'hist_score': -0.016670581943494724, 'absdiff_score': 0.7090022467320262, 'final_score': 0.31230243503236366}
+{'name': 'Dr. Mundo', 'gray_score': 0.29780229926109314, 'gray_eq_score': 0.18780601024627686, 'hist_score': 0.21741991242794886, 'absdiff_score': 0.7069899748093682, 'final_score': 0.31010508652226065}

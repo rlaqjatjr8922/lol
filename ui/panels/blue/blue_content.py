@@ -15,18 +15,21 @@ def draw_blue_content(surface, area_w, area_h, stage, state):
     draw_progress = ease_in_out(state.progress) if state.is_animating else state.progress
     highlight_big_count = 2 if stage == 3 else 0
 
-    # 🔥 ban_champions = {"ally": [...], "enemy": [...]}
-    banned = getattr(state, "ban_champions", {})
+    banned = getattr(state, "ban_champions", {}) or {}
+    picks = getattr(state, "pick_champions", {}) or {}
 
-    # 안전 처리
     if not isinstance(banned, dict):
-        left_bans = []
-        right_bans = []
-    else:
-        left_bans = banned.get("ally", []) or []
-        right_bans = banned.get("enemy", []) or []
+        banned = {"ally": [], "enemy": []}
 
-    # 🔵 왼쪽 (아군 밴)
+    if not isinstance(picks, dict):
+        picks = {"ally": [], "enemy": []}
+
+    left_bans = banned.get("ally", []) or []
+    right_bans = banned.get("enemy", []) or []
+
+    left_picks = picks.get("ally", []) or []
+    right_picks = picks.get("enemy", []) or []
+
     draw_team_block(
         surface=surface,
         team_x=left_x,
@@ -40,9 +43,9 @@ def draw_blue_content(surface, area_w, area_h, stage, state):
         mode=state.mode,
         highlight_big_count=highlight_big_count,
         small_champions=left_bans,
+        big_champions=left_picks,
     )
 
-    # 🔴 오른쪽 (적군 밴)
     draw_team_block(
         surface=surface,
         team_x=right_x,
@@ -56,9 +59,9 @@ def draw_blue_content(surface, area_w, area_h, stage, state):
         mode=state.mode,
         highlight_big_count=highlight_big_count,
         small_champions=right_bans,
+        big_champions=right_picks,
     )
 
-    # 중앙 그래프
     draw_center_pentagon(
         surface=surface,
         center_x=center_x,

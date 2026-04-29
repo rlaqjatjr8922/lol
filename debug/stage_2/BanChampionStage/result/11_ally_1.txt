@@ -1,0 +1,6 @@
+team: ally
+roi_index: 1
+local_index: 1
+detected_name: kennen
+best_name: kennen
+best_score: 0.5322312204113434

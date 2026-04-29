@@ -1,0 +1,13 @@
+team: enemy
+slot_index: 0
+slot_number: 1
+detected_name: orianna
+best_name: orianna
+best_score: 0.7704589993747831
+
+top_candidates:
+{'name': 'orianna', 'gray_score': 0.8517858386039734, 'gray_eq_score': 0.7268050909042358, 'hist_score': 0.6323268794802163, 'absdiff_score': 0.8521803513071895, 'final_score': 0.7704589993747831}
+{'name': 'garen_1', 'gray_score': 0.33713477849960327, 'gray_eq_score': 0.33060285449028015, 'hist_score': 0.4159196424670019, 'absdiff_score': 0.7385369859749455, 'final_score': 0.41114250521158735}
+{'name': 'Xin Zhao', 'gray_score': 0.3399951159954071, 'gray_eq_score': 0.27019283175468445, 'hist_score': 0.39188041493335746, 'absdiff_score': 0.7298274952342048, 'final_score': 0.3879063473966}
+{'name': "Kog'Maw", 'gray_score': 0.2867128551006317, 'gray_eq_score': 0.31578823924064636, 'hist_score': 0.40086429918040567, 'absdiff_score': 0.7288309334150327, 'final_score': 0.384583470905751}
+{'name': 'ahri', 'gray_score': 0.3947092890739441, 'gray_eq_score': 0.371379017829895, 'hist_score': 0.10698719576732346, 'absdiff_score': 0.7374229813453159, 'final_score': 0.381572842880111}

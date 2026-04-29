@@ -1,0 +1,13 @@
+team: ally
+slot_index: 3
+slot_number: 4
+detected_name: nautilus
+best_name: nautilus
+best_score: 0.5091928247979305
+
+top_candidates:
+{'name': 'nautilus', 'gray_score': 0.5071744918823242, 'gray_eq_score': 0.6308015584945679, 'hist_score': 0.08859308037611958, 'absdiff_score': 0.8314844601034859, 'final_score': 0.5091928247979305}
+{'name': 'pantheon_2', 'gray_score': 0.29435253143310547, 'gray_eq_score': 0.36451515555381775, 'hist_score': 0.6757431594121895, 'absdiff_score': 0.7443431712962962, 'final_score': 0.4591780402446146}
+{'name': 'fizz', 'gray_score': 0.17030970752239227, 'gray_eq_score': 0.2486405372619629, 'hist_score': 0.3900997551291186, 'absdiff_score': 0.7252229711328976, 'final_score': 0.3210039555071845}
+{'name': 'ambessa', 'gray_score': 0.20550797879695892, 'gray_eq_score': 0.30530378222465515, 'hist_score': 0.18065767291721746, 'absdiff_score': 0.7332746119281046, 'final_score': 0.3096416536189913}
+{'name': 'pyke', 'gray_score': 0.2197961062192917, 'gray_eq_score': 0.35026031732559204, 'hist_score': 0.07275809103657034, 'absdiff_score': 0.7437878710511983, 'final_score': 0.30812653123942346}

@@ -1,0 +1,13 @@
+team: ally
+slot_index: 2
+slot_number: 3
+detected_name: draven
+best_name: draven
+best_score: 0.5646265339694104
+
+top_candidates:
+{'name': 'draven', 'gray_score': 0.652157187461853, 'gray_eq_score': 0.6566367745399475, 'hist_score': 0.06571178966026042, 'absdiff_score': 0.8415875204248366, 'final_score': 0.5646265339694104}
+{'name': 'singed_1', 'gray_score': 0.11266761273145676, 'gray_eq_score': 0.11866088211536407, 'hist_score': 0.48624274121579575, 'absdiff_score': 0.6894829112200436, 'final_score': 0.27570291401678476}
+{'name': 'shen', 'gray_score': 0.15639634430408478, 'gray_eq_score': 0.10917657613754272, 'hist_score': 0.2940702868578562, 'absdiff_score': 0.6934266067538126, 'final_score': 0.2503197417323356}
+{'name': 'yuumi', 'gray_score': 0.16820822656154633, 'gray_eq_score': 0.1598213165998459, 'hist_score': 0.1886482031891191, 'absdiff_score': 0.6999965958605665, 'final_score': 0.2495484042934038}
+{'name': 'orianna', 'gray_score': 0.16435708105564117, 'gray_eq_score': 0.10274870693683624, 'hist_score': 0.2825168081456741, 'absdiff_score': 0.6967515999455338, 'final_score': 0.24936569207149017}

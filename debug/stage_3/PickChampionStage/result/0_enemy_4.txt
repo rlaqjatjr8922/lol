@@ -1,0 +1,13 @@
+team: enemy
+slot_index: 4
+slot_number: 5
+detected_name: kaisa_2
+best_name: kaisa_2
+best_score: 0.3640585607812265
+
+top_candidates:
+{'name': 'kaisa_2', 'gray_score': 0.3705132007598877, 'gray_eq_score': 0.40054887533187866, 'hist_score': 0.008763510697792047, 'absdiff_score': 0.7497438385076253, 'final_score': 0.3640585607812265}
+{'name': 'jhin', 'gray_score': 0.22774557769298553, 'gray_eq_score': 0.30999472737312317, 'hist_score': 0.30655958179789733, 'absdiff_score': 0.735158377587146, 'final_score': 0.34429504340213324}
+{'name': 'ahri', 'gray_score': 0.3101596236228943, 'gray_eq_score': 0.28491079807281494, 'hist_score': -0.03313317489516205, 'absdiff_score': 0.7213762935729848, 'final_score': 0.2956089167467728}
+{'name': 'fiora', 'gray_score': 0.27446243166923523, 'gray_eq_score': 0.25057756900787354, 'hist_score': 0.06086005980930708, 'absdiff_score': 0.7257838031045751, 'final_score': 0.29227470421414203}
+{'name': 'kennen', 'gray_score': 0.24465234577655792, 'gray_eq_score': 0.30797380208969116, 'hist_score': -0.034023068346122745, 'absdiff_score': 0.7295292075163399, 'final_score': 0.280645229106929}

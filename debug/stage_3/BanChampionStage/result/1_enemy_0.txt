@@ -1,6 +1,0 @@
-team: enemy
-roi_index: 5
-local_index: 0
-detected_name: mel
-best_name: mel
-best_score: 0.44100157713219335

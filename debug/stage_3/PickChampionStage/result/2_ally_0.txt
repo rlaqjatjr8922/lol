@@ -1,0 +1,13 @@
+team: ally
+slot_index: 0
+slot_number: 1
+detected_name: vladimir
+best_name: vladimir
+best_score: 0.8141239456555546
+
+top_candidates:
+{'name': 'vladimir', 'gray_score': 0.8121283650398254, 'gray_eq_score': 0.7800463438034058, 'hist_score': 0.8262069565144078, 'absdiff_score': 0.8708248229847495, 'final_score': 0.8141239456555546}
+{'name': "Vel'Koz", 'gray_score': 0.43911004066467285, 'gray_eq_score': 0.5201674103736877, 'hist_score': -0.027312604882110996, 'absdiff_score': 0.7815244587418301, 'final_score': 0.42150488517959406}
+{'name': 'diana', 'gray_score': 0.4251165986061096, 'gray_eq_score': 0.44689860939979553, 'hist_score': 0.07985760141107279, 'absdiff_score': 0.7638484647331154, 'final_score': 0.4134091823242589}
+{'name': 'singed_1', 'gray_score': 0.4256475567817688, 'gray_eq_score': 0.3888203501701355, 'hist_score': 0.1708380517714035, 'absdiff_score': 0.7521488630174292, 'final_score': 0.4126126897315548}
+{'name': 'Master Yi', 'gray_score': 0.3512522578239441, 'gray_eq_score': 0.3853796124458313, 'hist_score': 0.2779934445290433, 'absdiff_score': 0.7439231855936819, 'final_score': 0.40573934071699075}

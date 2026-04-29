@@ -1,0 +1,13 @@
+team: ally
+slot_index: 1
+slot_number: 2
+detected_name: teemo_1
+best_name: teemo_1
+best_score: 0.6044111485555437
+
+top_candidates:
+{'name': 'teemo_1', 'gray_score': 0.7454656958580017, 'gray_eq_score': 0.5974408984184265, 'hist_score': 0.21010917106687654, 'absdiff_score': 0.8149603417755992, 'final_score': 0.6044111485555437}
+{'name': 'nunu-and-willump', 'gray_score': 0.30673596262931824, 'gray_eq_score': 0.2877773344516754, 'hist_score': 0.24928995784777153, 'absdiff_score': 0.7284913705065359, 'final_score': 0.3528224844012987}
+{'name': 'zilean', 'gray_score': 0.2607319951057434, 'gray_eq_score': 0.2365138828754425, 'hist_score': 0.28449182421990027, 'absdiff_score': 0.7140642020697168, 'final_score': 0.3262183583040805}
+{'name': 'swain', 'gray_score': 0.25803133845329285, 'gray_eq_score': 0.23293614387512207, 'hist_score': 0.27845191882113235, 'absdiff_score': 0.7216579861111111, 'final_score': 0.3241308933020822}
+{'name': 'kindred', 'gray_score': 0.2626500725746155, 'gray_eq_score': 0.3049495220184326, 'hist_score': 0.08827482979259112, 'absdiff_score': 0.7306764025054466, 'final_score': 0.31066880834098043}

@@ -1,0 +1,13 @@
+team: enemy
+slot_index: 1
+slot_number: 2
+detected_name: riven
+best_name: riven
+best_score: 0.7295082762946885
+
+top_candidates:
+{'name': 'riven', 'gray_score': 0.7202706933021545, 'gray_eq_score': 0.7238485813140869, 'hist_score': 0.659719722183509, 'absdiff_score': 0.855433432053377, 'final_score': 0.7295082762946885}
+{'name': 'Master Yi', 'gray_score': 0.43397533893585205, 'gray_eq_score': 0.4495050609111786, 'hist_score': 0.42428194012454484, 'absdiff_score': 0.7642807904411765, 'final_score': 0.4862413934919872}
+{'name': 'leona_1', 'gray_score': 0.4879198372364044, 'gray_eq_score': 0.490120530128479, 'hist_score': 0.14016036402348186, 'absdiff_score': 0.7686176640795207, 'final_score': 0.4611328244879097}
+{'name': 'zed', 'gray_score': 0.38337084650993347, 'gray_eq_score': 0.3392154574394226, 'hist_score': 0.38070348375201696, 'absdiff_score': 0.7401939508442266, 'final_score': 0.42311422288734085}
+{'name': 'amumu', 'gray_score': 0.4557127058506012, 'gray_eq_score': 0.4396526515483856, 'hist_score': -0.007699005948990833, 'absdiff_score': 0.7554019437636166, 'final_score': 0.4031657328869704}

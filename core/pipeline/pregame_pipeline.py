@@ -85,7 +85,7 @@ class PregamePipeline:
                 if not self.text_stage.run(self.detect_stages["text1"]) and (self.app_state.gpt_stage == 0 or self.app_state.gpt_stage == 2):
                     print("[PregamePipeline] TextStage text1 실패")
                     self.gpt_stage.run(self.gptjson["0"])
-                self.previous_stage=1
+                self.app_state.previous_stage=1
             elif current_stage == 2:
                 print("[PregamePipeline] TextStage text2 시도")
 
@@ -96,10 +96,10 @@ class PregamePipeline:
                         print("[PregamePipeline] BanChampionStage ban_champion1 성공")
                         print("[PregamePipeline] GPTStage 1 시도")
                         self.gpt_stage.run(self.gptjson["1"])
-                self.previous_stage=1
+                self.app_state.previous_stage=1
 
             elif current_stage == 3:
-                if not self.app_state.previous_stage:
+                if self.app_state.previous_stage==0:
                     self.ban_champion_stage.run(self.detect_stages["ban_champion2"])
                 if not False:
                     print("[PregamePipeline] StickStage stick1 시도")
@@ -110,7 +110,7 @@ class PregamePipeline:
                             print("[PregamePipeline] PickChampionStage pick_champion1 성공")
                             print("[PregamePipeline] GPTStage 2 시도")
                             self.gpt_stage.run(self.gptjson["2"])
-                self.previous_stage=1
+                self.app_state.previous_stage=1
 
             elif current_stage == 4:
                 print("[PregamePipeline] GPTStage 3 시도")

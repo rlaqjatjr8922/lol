@@ -1,0 +1,6 @@
+team: ally
+roi_index: 3
+local_index: 3
+detected_name: Kog'Maw
+best_name: Kog'Maw
+best_score: 0.43216427816397884

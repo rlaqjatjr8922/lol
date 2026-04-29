@@ -1,6 +1,0 @@
-team: ally
-roi_index: 2
-local_index: 2
-detected_name: ryze
-best_name: ryze
-best_score: 0.5755331437537561

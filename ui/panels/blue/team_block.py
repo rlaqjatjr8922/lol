@@ -8,7 +8,9 @@ _image_cache = {}
 
 
 def norm_champion_name(name):
-    return str(name).strip().lower().replace(" ", "").replace("'", "")
+    name = str(name).strip().lower()
+    name = name.replace(" ", "").replace("'", "")
+    return name
 
 
 def load_champion_image(name, size):
@@ -43,6 +45,7 @@ def draw_team_block(
     mode,
     highlight_big_count=0,
     small_champions=None,
+    big_champions=None,
 ):
     top_row_h = int(team_h * 0.20)
     square_zone_h = int(team_h * 0.55)
@@ -179,6 +182,7 @@ def draw_team_block(
         border_color=big_border_color,
         fill_color=empty_fill_color,
         highlight_count=highlight_big_count,
+        champions=big_champions,
     )
 
     draw_small_group(
@@ -275,12 +279,21 @@ def draw_big_group(
     border_color,
     fill_color,
     highlight_count=0,
+    champions=None,
 ):
+    champions = champions or []
+
     for i in range(5):
         x = start_x + i * (size + gap)
         rect = pygame.Rect(int(x), int(y), int(size), int(size))
 
         pygame.draw.rect(surface, fill_color, rect)
+
+        if i < len(champions):
+            img = load_champion_image(champions[i], (int(size), int(size)))
+            if img:
+                surface.blit(img, rect.topleft)
+
         pygame.draw.rect(surface, border_color, rect, 3)
 
         if i < highlight_count:

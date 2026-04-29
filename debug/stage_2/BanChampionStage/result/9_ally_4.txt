@@ -1,0 +1,6 @@
+team: ally
+roi_index: 4
+local_index: 4
+detected_name: riven
+best_name: riven
+best_score: 0.5566772089637605
